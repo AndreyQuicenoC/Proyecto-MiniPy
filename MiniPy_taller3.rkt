@@ -84,7 +84,7 @@
 
 ;; <bool>            ::= true | false
 ;; <string>          ::= "..." 
-;; <hex>             ::= 0x[0-9A-Fa-f]
+;; <hex>             ::= 16x([0-15]*)
 ;; <float>           ::= [0-9].[0-9]
 
 ;; <class-decl>      ::= class <identifier> extends <identifier>
@@ -92,13 +92,34 @@
 ;;                         { method <identifier>(<identifier> { , <identifier> }) <expression> }*
 ;;
 ;; ========================================================================================
+;; INDICE:
+;; 1. Especificación_Léxica
+;; 2. Especificación_Sintáctica
+;; 3. Parser_Scanner_Interfaz
+;; 4. Evaluación_De_Expresiones
+;; 5. Evaluación_De_Circuitos
+;; 6. Conexión_De_Circuitos_En_Serie
+;; 7. Conexión_De_Circuitos_En_Paralelo
+;; 8. Funciones_Auxiliares
+;; 9. Procedimientos_
+;; 10. Ambientes_
+;; 11. Funciones_Para_Asignación_De_Variables
+;; 11. Funciones_Auxiliares_Para_Encontrar_La_Posición_De_Un_Símbolo
+;; 12. Pruebas de funciones principales
+;; ========================================================================================
+;;*******************************************************************************************
 
 
+;; 1. Especificación_Léxica
+;;*******************************************************************************************
 (define the-lexical-spec
 '((white-sp
    (whitespace) skip)
   (comment
    ("%" (arbno (not #\newline))) skip)
+  (string
+   ("\"" (arbno (not #\")) "\"")
+   string)
   (quote-token ("'") symbol) ; reconoce el carácter de comilla simple (') y lo trata como un símbolo
   (identifier
    (letter (arbno (or letter digit "?"))) symbol)
@@ -114,9 +135,11 @@
   (number
    ("-" digit (arbno digit))
    number)))
+;;*******************************************************************************************
 
 
-;Especificación Sintáctica (gramática)
+;; 2. Especificación_Sintáctica (gramática)
+;;*******************************************************************************************
 (define the-grammar
   '((program (expression) a-program)
 
@@ -125,6 +148,7 @@
       ("x16" "(" expression (arbno expression) ")")
       hex-exp)
     (expression (number) lit-exp)
+    (expression (string) string-exp)
     (expression (identifier) var-exp)
     (expression ("'" identifier) quoted-exp) ;; permite usar la sintaxis `'id` como una expresión citada
     (expression
@@ -146,6 +170,13 @@
              "=" expression)
       "in" expression)
      letrec-exp)
+    ; Asignación de variables
+    (expression ("begin" expression (arbno ";" expression) "end")
+                begin-exp)
+    (expression ("var" (arbno identifier "=" expression) "in" expression)
+                var-assign-exp)
+    (expression ("set" identifier "=" expression)
+                set-exp)
     (expression (bool) bool-exp)
     (expression (type) type-exp)
     (expression (circuit) circuit-exp)
@@ -185,9 +216,9 @@
   (lambda () (sllgen:list-define-datatypes the-lexical-spec the-grammar)))
 
 ;*******************************************************************************************
-
+;; 3. Parser_Scanner_Interfaz
 ;*******************************************************************************************
-;Parser, Scanner, Interfaz
+
 
 ;El FrontEnd (Análisis léxico (scanner) y sintáctico (parser) integrados)
 (define scan&parse
@@ -207,9 +238,8 @@
 
 ;*******************************************************************************************
 
+;; 4. Evaluación_De_Expresiones
 ;*******************************************************************************************
-;El Interprete
-
 ;eval-program: <programa> -> numero
 ; función que evalúa un programa teniendo en cuenta un ambiente dado (se inicializa dentro del programa)
 
@@ -237,6 +267,7 @@
                               (eval-expression (car rest) env))
                            (cdr rest)))))
       (lit-exp (datum) datum)
+      (string-exp (datum) datum)
       (var-exp (id) (apply-env env id))
       (quoted-exp (id) id) ; evalúa una expresión citada devolviendo directamente el símbolo sin buscarlo en el ambiente
       (primapp-exp (prim rands)
@@ -262,6 +293,24 @@
       (letrec-exp (proc-names idss bodies letrec-body)
                   (eval-expression letrec-body
                                    (extend-env-recursively proc-names idss bodies env)))
+      (begin-exp (exp exps)
+                 (let loop ((acc (eval-expression exp env))
+                            (exps exps))
+                   (if (null? exps)
+                       acc
+                       (loop (eval-expression (car exps)
+                                              env)
+                             (cdr exps)))))
+      (var-assign-exp (ids rands body)
+                      (let ((vals (eval-rands rands env)))
+                        (let ((env2 (extend-env ids vals env)))
+                          (eval-expression body env2))))
+      (set-exp (id rhs-exp)
+               (begin
+                 (setref!
+                  (apply-env-ref env id)
+                  (eval-expression rhs-exp env))
+                 1))
       (bool-exp (b)
                 (cases bool b
                   (true-lit () #t)
@@ -328,7 +377,7 @@
     (not (zero? x))))
 
 ;*******************************************************************************************
-;; Evaluación de circuitos: se llama a eval-circuit
+;; 5. Evaluación_De_Circuitos
 ;*******************************************************************************************
 
 ; eval-circuit: evalúa un circuito completo compuesto por una lista de compuertas.
@@ -409,7 +458,7 @@
               (inps (cdr lst) (+ count (if (car lst) 1 0)))))))))
 
 ;*******************************************************************************************
-;; Conexión de circuitos en serie: se llama a connect-circuits
+;; 6. Conexión_De_Circuitos_En_Serie: se llama a connect-circuits
 ;*******************************************************************************************
 
 ; connect-circuits: combina dos circuitos, reemplazando una entrada del segundo circuito
@@ -431,7 +480,7 @@
 
 
 ;*******************************************************************************************
-;; Conexión de circuitos en paralelo: se llama a merge-circuits
+;; 7. Conexión_De_Circuitos_En_Paralelo: se llama a merge-circuits
 ;*******************************************************************************************
 
 ; merge-circuits: une dos circuitos agregando una nueva compuerta lógica al final  
@@ -465,7 +514,7 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Funciones auxiliares propias
+;; 8. Funciones_Auxiliares
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;1) get-last-gate-id: obtiene el identificador (id) de la última compuerta en una lista de compuertas (gate-list)
@@ -543,7 +592,7 @@
 
 
 ;*******************************************************************************************
-;Procedimientos
+;; 9. Procedimientos
 (define-datatype procval procval?
   (closure
    (ids (list-of symbol?))
@@ -565,18 +614,15 @@
       (closure (ids body env)
                (eval-expression body (extend-env ids args env))))))
 
-;Ambientes
+;; 10. Ambientes
 
 ;definición del tipo de dato ambiente
 (define-datatype environment environment?
   (empty-env-record)
-  (extended-env-record (syms (list-of symbol?))
-                       (vals (list-of scheme-value?))
-                       (env environment?))
-  (recursively-extended-env-record (proc-names (list-of symbol?))
-                                   (idss (list-of (list-of symbol?)))
-                                   (bodies (list-of expression?))
-                                   (env environment?)))
+  (extended-env-record
+   (syms (list-of symbol?))
+   (vec vector?)
+   (env environment?)))
 
 (define scheme-value? (lambda (v) #t))
 
@@ -591,41 +637,78 @@
 ;función que crea un ambiente extendido
 (define extend-env
   (lambda (syms vals env)
-    (extended-env-record syms vals env)))
+    (extended-env-record syms (list->vector vals) env)))
 
 ;extend-env-recursively: <list-of symbols> <list-of <list-of symbols>> <list-of expressions> environment -> environment
 ;función que crea un ambiente extendido para procedimientos recursivos
 (define extend-env-recursively
   (lambda (proc-names idss bodies old-env)
-    (recursively-extended-env-record
-     proc-names idss bodies old-env)))
+    (let ((len (length proc-names)))
+      (let ((vec (make-vector len)))
+        (let ((env (extended-env-record proc-names vec old-env)))
+          (for-each
+           (lambda (pos ids body)
+             (vector-set! vec pos (closure ids body env)))
+           (iota len) idss bodies)
+          env)))))
 
 
 ;función que busca un símbolo en un ambiente
 (define apply-env
   (lambda (env sym)
+    (deref (apply-env-ref env sym))))
+
+(define apply-env-ref
+  (lambda (env sym)
     (cases environment env
       (empty-env-record ()
-                        (eopl:error 'empty-env "No binding for ~s" sym))
-      (extended-env-record (syms vals old-env)
-                           (let ((pos (list-find-position sym syms)))
+                        (eopl:error 'apply-env-ref "No binding for ~s" sym))
+      (extended-env-record (syms vals env)
+                           (let ((pos (rib-find-position sym syms)))
                              (if (number? pos)
-                                 (list-ref vals pos)
-                                 (apply-env old-env sym))))
-      (recursively-extended-env-record (proc-names idss bodies old-env)
-                                       (let ((pos (list-find-position sym proc-names)))
-                                         (if (number? pos)
-                                             (closure (list-ref idss pos)
-                                                      (list-ref bodies pos)
-                                                      env)
-                                             (apply-env old-env sym)))))))
-
+                                 (a-ref pos vals)
+                                 (apply-env-ref env sym)))))))
 
 ;****************************************************************************************
-;Funciones Auxiliares
+;; 11. Funciones_Para_Asignación_De_Variables
+;iota: number -> list
+;función que retorna una lista de los números desde 0 hasta end
+(define iota
+  (lambda (end)
+    (let loop ((next 0))
+      (if (>= next end) '()
+          (cons next (loop (+ 1 next)))))))
 
-; funciones auxiliares para encontrar la posición de un símbolo
-; en la lista de símbolos de unambiente
+(define-datatype reference reference?
+  (a-ref (position integer?)
+         (vec vector?)))
+
+(define deref
+  (lambda (ref)
+    (primitive-deref ref)))
+
+(define primitive-deref
+  (lambda (ref)
+    (cases reference ref
+      (a-ref (pos vec)
+             (vector-ref vec pos)))))
+
+(define setref!
+  (lambda (ref val)
+    (primitive-setref! ref val)))
+
+(define primitive-setref!
+  (lambda (ref val)
+    (cases reference ref
+      (a-ref (pos vec)
+             (vector-set! vec pos val)))))
+
+;****************************************************************************************
+;; 12. Funciones_Auxiliares_Para_Encontrar_La_Posición_De_Un_Símbolo
+; en la lista de símbolos de un ambiente
+(define rib-find-position
+  (lambda (sym los)
+    (list-find-position sym los)))
 
 (define list-find-position
   (lambda (sym los)
@@ -663,7 +746,7 @@
 ; (scan&parse "
 ; let  
 ;   A = True
-;   C1 = (circuit (gate-list 
+;   C1 = C(circuit (gate-list 
 ;            (gate G1 (type not) (input-list A))))
 ; in 
 ;   eval-circuit(C1)
