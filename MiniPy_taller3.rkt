@@ -1,5 +1,6 @@
 #lang eopl
 
+
 ;; ======================================================================================
 ;;
 ;;  /$$$$$$$  /$$$$$$$   /$$$$$$  /$$     /$$ /$$$$$$$$  /$$$$$$  /$$$$$$$$ /$$$$$$  
@@ -156,8 +157,6 @@
      primapp-exp)
     (expression ("if" expression "then" expression "else" expression)
                 if-exp)
-    (expression ("let" (arbno identifier "=" expression) "in" expression)
-                let-exp)
     (expression
      ("proc" "(" (separated-list identifier ",") ")" expression)
      proc-exp)
@@ -165,7 +164,7 @@
      ("(" expression (arbno expression) ")")
      app-exp)
     (expression
-     ("letrec"
+     ("rec"
       (arbno identifier "(" (separated-list identifier ",") ")"
              "=" expression)
       "in" expression)
@@ -175,6 +174,8 @@
                 begin-exp)
     (expression ("var" (arbno identifier "=" expression) "in" expression)
                 var-assign-exp)
+    (expression ("const" (arbno identifier "=" expression) "in" expression)
+                const-assign-exp)
     (expression ("set" identifier "=" expression)
                 set-exp)
     (expression (bool) bool-exp)
@@ -277,10 +278,6 @@
               (if (true-value? (eval-expression test-exp env))
                   (eval-expression true-exp env)
                   (eval-expression false-exp env)))
-      (let-exp (ids rands body)
-               (let ((args (eval-rands rands env)))
-                 (eval-expression body
-                                  (extend-env ids args env))))
       (proc-exp (ids body)
                 (closure ids body env))
       (app-exp (rator rands)
@@ -305,11 +302,25 @@
                       (let ((vals (eval-rands rands env)))
                         (let ((env2 (extend-env ids vals env)))
                           (eval-expression body env2))))
+      (const-assign-exp (ids rands body)
+                        (let ((vals (eval-rands rands env)))
+                          (eval-expression
+                           body
+                           (extend-const-env ids vals env))))
       (set-exp (id rhs-exp)
                (begin
-                 (setref!
-                  (apply-env-ref env id)
-                  (eval-expression rhs-exp env))
+                 (let* ((ref   (apply-env-ref env id))
+                        (muts  (cases environment env
+                                 (empty-env-record ()
+                                                   (eopl:error 'set-exp "No binding for ~s" id))
+                                 (extended-env-record (syms _ muts parent)
+                                                      (let ((i (list-index (lambda (s) (eq? s id)) syms)))
+                                                        (if (number? i)
+                                                            (vector-ref muts i)
+                                                            (apply-env-ref parent id)))))))
+                   (unless muts
+                     (eopl:error 'set-exp "No se puede reasignar: ~s es const" id))
+                   (setref! ref (eval-expression rhs-exp env)))
                  1))
       (bool-exp (b)
                 (cases bool b
@@ -622,6 +633,7 @@
   (extended-env-record
    (syms (list-of symbol?))
    (vec vector?)
+   (muts vector?)
    (env environment?)))
 
 (define scheme-value? (lambda (v) #t))
@@ -637,7 +649,24 @@
 ;función que crea un ambiente extendido
 (define extend-env
   (lambda (syms vals env)
-    (extended-env-record syms (list->vector vals) env)))
+    (extended-env-record
+     syms
+     (list->vector vals)
+     ;; Vector paralelo de mut flags, todos #t
+     (make-vector (length syms) #t)
+     env)))
+
+(define extend-const-env
+  (lambda (syms vals env)
+    (extended-env-record
+     syms
+     (list->vector vals)
+     ;; Vector paralelo de mut flags, todos #f para const
+     (make-vector (length syms) #f)
+     env)))
+
+
+
 
 ;extend-env-recursively: <list-of symbols> <list-of <list-of symbols>> <list-of expressions> environment -> environment
 ;función que crea un ambiente extendido para procedimientos recursivos
@@ -645,12 +674,13 @@
   (lambda (proc-names idss bodies old-env)
     (let ((len (length proc-names)))
       (let ((vec (make-vector len)))
-        (let ((env (extended-env-record proc-names vec old-env)))
-          (for-each
-           (lambda (pos ids body)
-             (vector-set! vec pos (closure ids body env)))
-           (iota len) idss bodies)
-          env)))))
+        (let ((muts(make-vector len #t)))
+          (let ((env (extended-env-record proc-names vec old-env)))
+            (for-each
+            (lambda (pos ids body)
+              (vector-set! vec pos (closure ids body env)))
+            (iota len) idss bodies)
+            env))))))
 
 
 ;función que busca un símbolo en un ambiente
@@ -663,7 +693,7 @@
     (cases environment env
       (empty-env-record ()
                         (eopl:error 'apply-env-ref "No binding for ~s" sym))
-      (extended-env-record (syms vals env)
+      (extended-env-record (syms vals muts env)
                            (let ((pos (rib-find-position sym syms)))
                              (if (number? pos)
                                  (a-ref pos vals)
