@@ -24,7 +24,7 @@
 ;; Integrantes del grupo #15:
 ;; - Jonathan Aristizabal Vargas - 2322626
 ;; - Andrey Quiceno Cabrera      - 2326081
-;; - Juan Francesco García Vargas     - 2310174
+;; - Francesco García Vargas     - 
 
 ;; Fecha de entrega: 03-05-2025
 ;; ========================================================================================
@@ -55,7 +55,7 @@
 ;;                    | for <identifier> in <expression> do <expression> done
 ;;                    | tuple [ <expression> { ; <expression> } ]
 ;;                    | { <identifier> = <expression> { ; <identifier> = <expression> } }
-;;                    | [ <expression> { ; <expression> } ] ; lists
+;;                    | [ <expression> { ; <expression> } ]
 ;;                    | <expr-bool>
 ;;                    | ref <expression>
 ;;                    | deref <expression>
@@ -194,18 +194,6 @@
     (primitive ("connect-circuits") connect-circuits-prim)
     (primitive ("merge-circuits") merge-circuits-prim)
 
-    ;; Primitivas listas
-
-    (primitive ( "vacio?" ) empty-list-prim)
-    (primitive ( "vacio" ) create-empty-list-prim)
-    (primitive ( "crear-lista" ) create-param-list-prim)
-    (primitive ( "lista?" ) is-list-prim)
-    (primitive ("cabeza") head-list-prim)
-    (primitive ("cola") last-list-prim)
-    (primitive ("append") append-list-prim)
-    (primitive ("ref-list") index-list-prim)
-    (primitive ("set-list") put-list-prim)
-
     ;; Construcción del circuito
     (circuit ("C(" "circuit" "(" "gate-list" gate-list ")" ")") a-circuit)
     (gate-list () empty-gate-list)
@@ -221,19 +209,7 @@
     (input (identifier) ref-input)
     (input (bool) bool-input)
     (bool ("True") true-lit)
-    (bool ("False") false-lit)
-    
-    ;; control structs
-    (expression ("for" identifier "in" expression "do" expression "done") for-exp) ;; #1 -> iterative var, #2 -> data struct #3 -> body
-
-    ;; data structs
-
-    (expression ("[" (arbno expression) "]") list-exp)
-
-    ))
-
-
-;; for <identifier> in <expression> do <expression> done
+    (bool ("False") false-lit)))
 
 ;Construidos automáticamente:
 (sllgen:make-define-datatypes the-lexical-spec the-grammar)
@@ -326,7 +302,6 @@
                       (let ((vals (eval-rands rands env)))
                         (let ((env2 (extend-env ids vals env)))
                           (eval-expression body env2))))
-      ;; Constant definition, uses env extend to process
       (const-assign-exp (ids rands body)
                         (let ((vals (eval-rands rands env)))
                           (eval-expression
@@ -358,18 +333,7 @@
                   (not-type () 'not)
                   (xor-type () 'xor)))
       (circuit-exp (circ)
-                   circ)
-      (for-exp (iter struct body) iter)
-
-      (list-exp (elements)
-                (let ((vals (eval-rands elements env)))
-                          vals)
-
-                )
-
-      )))
-
-
+                   circ))))
 
 ;*******************************************************************************************
 
@@ -394,63 +358,6 @@
       (incr-prim () (+ (car args) 1))
       (decr-prim () (- (car args) 1))
 
-      (empty-list-prim () ;; Ya esta args evaluado
-              (let
-                (
-                  (val (car args) )
-                )
-                (if (list? val) (null? val)
-                  (eopl:error 'empty-list-prim "Not a list: ~s" val)
-                 )
-              )                        
-       )
-
-          ;(primitive ( "vacio" ) create-empty-list-prim)
-    ;(primitive ( "crear-lista" ) create-param-list-prim)
-
-      (create-empty-list-prim ()
-
-                           '()
-
-                           )
-
-      (create-param-list-prim ()
-
-                              (repetir (car args) (cadr args))
-
-                              )
-
-      (is-list-prim ()
-
-            (let ((val (car args))) 
-              (if (list? val)
-                #t
-                #f))
-            )
-
-      (head-list-prim ()
-
-                      (car (car args))
-
-
-                      )
-
-      (last-list-prim ()
-
-                      (last (car args))
-
-       )
-
-      (append-list-prim ()
-
-                        (putf (car args) (cadr args))
-
-                        )
-
-      (index-list-prim () (list-pos (car args) (cadr args)))
-
-      (put-list-prim () (insertar-en-posicion (car args) (cadr args) (caddr args)))
-      
       ;; Primitiva: eval-circuit(circuito, entrada)
       (eval-circuit-prim ()
                          (let ((circ (car args)))
@@ -479,39 +386,6 @@
 (define true-value?
   (lambda (x)
     (not (zero? x))))
-
-(define repetir 
-  (lambda (b a)
-  (if (zero? a)
-      '()
-      (cons b (repetir b (- a 1))))))
-
-(define last 
-  (lambda (lst)
-  (if (null? (cdr lst))
-      (car lst)
-      (last (cdr lst)))))
-
-(define putf 
-  (lambda (lst elem)
-  (if (null? lst)
-      (list elem)
-      (cons (car lst) (putf (cdr lst) elem)))))
-
-(define list-pos
-  (lambda (lst x)
-  (if (zero? x)
-      (car lst)
-      (list-pos (cdr lst) (- x 1)))))
-
-(define insertar-en-posicion
-  (lambda (lst pos val)
-  (cond
-    [(not (list? lst)) (eopl:error "Not a list")]
-    [(negative? pos) (eopl:error "negative index")]
-    [(zero? pos) (cons val lst)]
-    [(null? lst) (eopl:error "index out of range")]
-    [else (cons (car lst) (insertar-en-posicion (cdr lst) (- pos 1) val))])))
 
 ;*******************************************************************************************
 ;; 5. Evaluación_De_Circuitos
