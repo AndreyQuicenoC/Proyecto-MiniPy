@@ -1,4 +1,6 @@
 #lang eopl
+(require racket/string)
+
 
 
 ;; ======================================================================================
@@ -186,9 +188,17 @@
     (primitive ("+") add-prim)
     (primitive ("-") substract-prim)
     (primitive ("*") mult-prim)
+    (primitive ("/") div-prim)
+    (primitive ("mod") mod-prim)
     (primitive ("add1") incr-prim)
     (primitive ("sub1") decr-prim)
-    
+
+    ;; Primitivas hexadecimales
+    (primitive ("hex") dec-hex-prim)
+
+    ;; Primitivas de cadenas
+    (primitive ("s-len") string-length-prim)
+    (primitive ("s-append") string-append-prim)
     ;; Primitivas de circuitos
     (primitive ("eval-circuit") eval-circuit-prim)
     (primitive ("connect-circuits") connect-circuits-prim)
@@ -268,7 +278,7 @@
                               (eval-expression (car rest) env))
                            (cdr rest)))))
       (lit-exp (datum) datum)
-      (string-exp (datum) datum)
+      (string-exp (datum) (substring datum 1 (- (string-length datum) 1))) ; elimina las comillas
       (var-exp (id) (apply-env env id))
       (quoted-exp (id) id) ; evalúa una expresión citada devolviendo directamente el símbolo sin buscarlo en el ambiente
       (primapp-exp (prim rands)
@@ -355,9 +365,34 @@
       (add-prim () (+ (car args) (cadr args)))
       (substract-prim () (- (car args) (cadr args)))
       (mult-prim () (* (car args) (cadr args)))
+      (div-prim () (if (= (cadr args) 0)
+                      (eopl:error 'apply-primitive "Division by zero")
+                      (/ (car args) (cadr args))))
+      (mod-prim () (if (= (cadr args) 0)
+                       (eopl:error 'apply-primitive "Division by zero")
+                       (remainder (car args) (cadr args))))
       (incr-prim () (+ (car args) 1))
       (decr-prim () (- (car args) 1))
+      ;; Primitivas hexadecimales
+      (dec-hex-prim ()
+                     (let* ([n (car args)]
+                            ;; recorre n dividiendo entre 16 hasta obtener todos los dígitos
+                            [digits (let loop ([num n] [acc '()])
+                                      (if (< num 16)
+                                          (cons num acc)
+                                          (loop (quotient num 16)
+                                                (cons (remainder num 16) acc))))]
+                            ;; formatea "x16 (" + "d1 d2 …" + ")"
+                            [out    (string-append "x16 ("
+                                                   (string-join (map number->string digits)" ")
+                                                   ")")])
+                       out))
 
+      ;; Primitivas de cadenas:
+      (string-length-prim ()
+                          (string-length (car args)))
+      (string-append-prim ()
+                          (apply string-append args))
       ;; Primitiva: eval-circuit(circuito, entrada)
       (eval-circuit-prim ()
                          (let ((circ (car args)))
