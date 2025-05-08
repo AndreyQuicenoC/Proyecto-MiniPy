@@ -26,7 +26,7 @@
 ;; Integrantes del grupo #15:
 ;; - Jonathan Aristizabal Vargas - 2322626
 ;; - Andrey Quiceno Cabrera      - 2326081
-;; - Francesco García Vargas     - 
+;; - Francesco García Vargas     - 2310174
 
 ;; Fecha de entrega: 03-05-2025
 ;; ========================================================================================
