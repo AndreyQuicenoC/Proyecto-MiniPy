@@ -28,6 +28,8 @@ Un lenguaje que te permite **crear, aprender y experimentar** con la programaci�
 ---
 
 ### Desarrollado por 👨‍💻:
-Jonathan Aristizabal - 2322626
-Adolfo Andrey Quiceno - 2326081
+Jonathan Aristizabal - 2322626  
+
+Adolfo Andrey Quiceno - 2326081  
+
 Juan Francesco García - 2310174
