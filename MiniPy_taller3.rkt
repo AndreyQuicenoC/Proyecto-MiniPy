@@ -318,20 +318,20 @@
                            body
                            (extend-const-env ids vals env))))
       (set-exp (id rhs-exp)
-               (begin
-                 (let* ((ref   (apply-env-ref env id))
-                        (muts  (cases environment env
-                                 (empty-env-record ()
-                                                   (eopl:error 'set-exp "No binding for ~s" id))
-                                 (extended-env-record (syms _ muts parent)
-                                                      (let ((i (list-index (lambda (s) (eq? s id)) syms)))
-                                                        (if (number? i)
-                                                            (vector-ref muts i)
-                                                            (apply-env-ref parent id)))))))
-                   (unless muts
-                     (eopl:error 'set-exp "No se puede reasignar: ~s es const" id))
-                   (setref! ref (eval-expression rhs-exp env)))
+               (let ((ref  (apply-env-ref env id))
+                     (muts (cases environment env
+                             (empty-env-record ()
+                                               (eopl:error 'set-exp "No binding for ~s" id))
+                             (extended-env-record (syms _ muts parent)
+                                                  (let ((i (list-index (lambda (s) (eq? s id)) syms)))
+                                                    (if (number? i)
+                                                        (vector-ref muts i)
+                                                        (apply-env-ref parent id)))))))
+                 (unless muts
+                   (eopl:error 'set-exp "No se puede reasignar: ~s es const" id))
+                 (setref! ref (eval-expression rhs-exp env))
                  1))
+
       (bool-exp (b)
                 (cases bool b
                   (true-lit () #t)
@@ -390,7 +390,11 @@
 
       ;; Primitivas de cadenas:
       (string-length-prim ()
-                          (string-length (car args)))
+                          (let* ([s (car args)]             ; el string real, sin comillas
+                                 [n (string-length s)])
+                            (if (> n 1)
+                                (bool-exp (true-lit))      ; construye el AST “True”
+                                (bool-exp (false-lit)))))  ; o el AST “False”
       (string-append-prim ()
                           (apply string-append args))
       ;; Primitiva: eval-circuit(circuito, entrada)
@@ -710,7 +714,7 @@
     (let ((len (length proc-names)))
       (let ((vec (make-vector len)))
         (let ((muts(make-vector len #t)))
-          (let ((env (extended-env-record proc-names vec old-env)))
+          (let ((env (extended-env-record proc-names vec muts old-env)))
             (for-each
             (lambda (pos ids body)
               (vector-set! vec pos (closure ids body env)))
@@ -818,3 +822,4 @@
 ; ")
 
 (interpretador)
+
