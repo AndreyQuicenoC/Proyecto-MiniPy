@@ -1,6 +1,10 @@
 #lang eopl
 
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 818ac1a9938c263754a8c6d98101f53039b18380
 ;; ======================================================================================
 ;;
 ;;  /$$$$$$$  /$$$$$$$   /$$$$$$  /$$     /$$ /$$$$$$$$  /$$$$$$  /$$$$$$$$ /$$$$$$  
@@ -24,7 +28,11 @@
 ;; Integrantes del grupo #15:
 ;; - Jonathan Aristizabal Vargas - 2322626
 ;; - Andrey Quiceno Cabrera      - 2326081
+<<<<<<< HEAD
 ;; - Francesco García Vargas     - 
+=======
+;; - Francesco García Vargas     - 2310174
+>>>>>>> 818ac1a9938c263754a8c6d98101f53039b18380
 
 ;; Fecha de entrega: 03-05-2025
 ;; ========================================================================================
@@ -146,7 +154,11 @@
 
     ;; Expresiones del lenguaje
     (expression 
+<<<<<<< HEAD
       ("x16" "(" expression (arbno expression) ")")
+=======
+      ("x16" "(" number (arbno number) ")")
+>>>>>>> 818ac1a9938c263754a8c6d98101f53039b18380
       hex-exp)
     (expression (number) lit-exp)
     (expression (string) string-exp)
@@ -186,9 +198,26 @@
     (primitive ("+") add-prim)
     (primitive ("-") substract-prim)
     (primitive ("*") mult-prim)
+<<<<<<< HEAD
     (primitive ("add1") incr-prim)
     (primitive ("sub1") decr-prim)
     
+=======
+    (primitive ("/") div-prim)
+    (primitive ("mod") mod-prim)
+    (primitive ("add1") incr-prim)
+    (primitive ("sub1") decr-prim)
+
+    ;; Primitivas hexadecimales
+    (primitive ("hex+") add-hex-prim)
+    (primitive ("hex-") sub-hex-prim)
+    (primitive ("hex*") mult-hex-prim)
+    (primitive ("hexadd1") incr-hex-prim)
+    (primitive ("hexsub1") decr-hex-prim)
+    ;; Primitivas de cadenas
+    (primitive ("s-len") string-length-prim)
+    (primitive ("s-append") string-append-prim)
+>>>>>>> 818ac1a9938c263754a8c6d98101f53039b18380
     ;; Primitivas de circuitos
     (primitive ("eval-circuit") eval-circuit-prim)
     (primitive ("connect-circuits") connect-circuits-prim)
@@ -260,6 +289,7 @@
   (lambda (exp env)
     (cases expression exp
       (hex-exp (d1 ds)
+<<<<<<< HEAD
                (let loop ((acc (eval-expression d1 env))
                           (rest ds))
                  (if (null? rest)
@@ -269,6 +299,11 @@
                            (cdr rest)))))
       (lit-exp (datum) datum)
       (string-exp (datum) datum)
+=======
+               (list "x16" (cons d1 ds)))
+      (lit-exp (datum) datum)
+      (string-exp (datum) (substring datum 1 (- (string-length datum) 1))) ; elimina las comillas
+>>>>>>> 818ac1a9938c263754a8c6d98101f53039b18380
       (var-exp (id) (apply-env env id))
       (quoted-exp (id) id) ; evalúa una expresión citada devolviendo directamente el símbolo sin buscarlo en el ambiente
       (primapp-exp (prim rands)
@@ -308,6 +343,7 @@
                            body
                            (extend-const-env ids vals env))))
       (set-exp (id rhs-exp)
+<<<<<<< HEAD
                (begin
                  (let* ((ref   (apply-env-ref env id))
                         (muts  (cases environment env
@@ -322,6 +358,22 @@
                      (eopl:error 'set-exp "No se puede reasignar: ~s es const" id))
                    (setref! ref (eval-expression rhs-exp env)))
                  1))
+=======
+               (let ((ref  (apply-env-ref env id))
+                     (muts (cases environment env
+                             (empty-env-record ()
+                                               (eopl:error 'set-exp "No binding for ~s" id))
+                             (extended-env-record (syms _ muts parent)
+                                                  (let ((i (list-index (lambda (s) (eq? s id)) syms)))
+                                                    (if (number? i)
+                                                        (vector-ref muts i)
+                                                        (apply-env-ref parent id)))))))
+                 (unless muts
+                   (eopl:error 'set-exp "No se puede reasignar: ~s es const" id))
+                 (setref! ref (eval-expression rhs-exp env))
+                 1))
+
+>>>>>>> 818ac1a9938c263754a8c6d98101f53039b18380
       (bool-exp (b)
                 (cases bool b
                   (true-lit () #t)
@@ -355,9 +407,86 @@
       (add-prim () (+ (car args) (cadr args)))
       (substract-prim () (- (car args) (cadr args)))
       (mult-prim () (* (car args) (cadr args)))
+<<<<<<< HEAD
       (incr-prim () (+ (car args) 1))
       (decr-prim () (- (car args) 1))
 
+=======
+      (div-prim () (if (= (cadr args) 0)
+                      (eopl:error 'apply-primitive "Division by zero")
+                      (/ (car args) (cadr args))))
+      (mod-prim () (if (= (cadr args) 0)
+                       (eopl:error 'apply-primitive "Division by zero")
+                       (remainder (car args) (cadr args))))
+      (incr-prim () (+ (car args) 1))
+      (decr-prim () (- (car args) 1))
+      ;; Primitivas hexadecimales
+      ;; hex+ : suma dos hexadecimales
+      (add-hex-prim ()
+                    (let* ([raw1    (car args)]              ; -> '("x16" ds1)
+                           [raw2    (car (cdr args))]        ; -> '("x16" ds2)
+                           [ds1     (car (cdr raw1))]        ; extrae lista ds1
+                           [ds2     (car (cdr raw2))]        ; extrae lista ds2
+                           [n1      (hex-list->decimal ds1)]
+                           [n2      (hex-list->decimal ds2)]
+                           [sum     (+ n1 n2)]
+                           [out-ds  (decimal->hex-list sum)])
+                      (list "x16" out-ds)))
+
+      ;; hex- : resta (error si negativo)
+      (sub-hex-prim ()
+                    (let* ([raw1    (car args)]
+                           [raw2    (car (cdr args))]
+                           [ds1     (car (cdr raw1))]
+                           [ds2     (car (cdr raw2))]
+                           [n1      (hex-list->decimal ds1)]
+                           [n2      (hex-list->decimal ds2)]
+                           [diff    (- n1 n2)])
+                      (if (< diff 0)
+                          (eopl:error 'sub-hex-prim "Resultado negativo")
+                          (list "x16" (decimal->hex-list diff)))))
+
+      ;; hex* : multiplicación
+      (mult-hex-prim ()
+                     (let* ([raw1    (car args)]
+                            [raw2    (car (cdr args))]
+                            [ds1     (car (cdr raw1))]
+                            [ds2     (car (cdr raw2))]
+                            [n1      (hex-list->decimal ds1)]
+                            [n2      (hex-list->decimal ds2)]
+                            [prod    (* n1 n2)]
+                            [out-ds  (decimal->hex-list prod)])
+                       (list "x16" out-ds)))
+
+      ;; hexadd1 : incrementa
+      (incr-hex-prim ()
+                     (let* ([raw     (car args)]             ; un solo arg
+                            [ds      (car (cdr raw))]
+                            [n       (hex-list->decimal ds)]
+                            [inc     ( (+ 1 n))]
+                            [out-ds  (decimal->hex-list inc)])
+                       (list "x16" out-ds)))
+
+      ;; hexsub1 : decrementa (error si negativo)
+      (decr-hex-prim ()
+                     (let* ([raw     (car args)]
+                            [ds      (car (cdr raw))]
+                            [n       (hex-list->decimal ds)]
+                            [dec     ( (- n 1))])
+                       (if (< dec 0)
+                           (eopl:error 'decr-hex-prim "Resultado negativo")
+                           (list "x16" (decimal->hex-list dec)))))
+
+      ;; Primitivas de cadenas:
+      (string-length-prim ()
+                          (let* ([s (car args)]             ; el string real, sin comillas
+                                 [n (string-length s)])
+                            (if (> n 1)
+                                (bool-exp (true-lit))      ; construye el AST “True”
+                                (bool-exp (false-lit)))))  ; o el AST “False”
+      (string-append-prim ()
+                          (apply string-append args))
+>>>>>>> 818ac1a9938c263754a8c6d98101f53039b18380
       ;; Primitiva: eval-circuit(circuito, entrada)
       (eval-circuit-prim ()
                          (let ((circ (car args)))
@@ -675,7 +804,11 @@
     (let ((len (length proc-names)))
       (let ((vec (make-vector len)))
         (let ((muts(make-vector len #t)))
+<<<<<<< HEAD
           (let ((env (extended-env-record proc-names vec old-env)))
+=======
+          (let ((env (extended-env-record proc-names vec muts old-env)))
+>>>>>>> 818ac1a9938c263754a8c6d98101f53039b18380
             (for-each
             (lambda (pos ids body)
               (vector-set! vec pos (closure ids body env)))
@@ -754,6 +887,27 @@
                 (+ list-index-r 1)
                 #f))))))
 
+<<<<<<< HEAD
+=======
+;****************************************************************************************
+;; 13. Funciones_Auxiliares_Para_Hexadecimales
+;; Convierte una lista de dígitos hexadecimales (enteros 0–15) a un número decimal
+(define (hex-list->decimal digits)
+  (let loop ([acc 0] [lst digits])
+    (if (null? lst)
+        acc
+        (loop (+ (* acc 16) (car lst))
+              (cdr lst)))))
+
+;; Convierte un número decimal ≥0 en la lista de sus dígitos hexadecimales
+(define (decimal->hex-list n)
+  (let loop ([num n] [acc '()])
+    (if (< num 16)
+        (cons num acc)
+        (loop (quotient num 16)
+              (cons (remainder num 16) acc)))))
+
+>>>>>>> 818ac1a9938c263754a8c6d98101f53039b18380
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;Pruebas de funciones principales
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -782,4 +936,9 @@
 ;   eval-circuit(C1)
 ; ")
 
+<<<<<<< HEAD
 (interpretador)
+=======
+(interpretador)
+
+>>>>>>> 818ac1a9938c263754a8c6d98101f53039b18380
