@@ -186,6 +186,7 @@
     (primitive ("+") add-prim)
     (primitive ("-") substract-prim)
     (primitive ("*") mult-prim)
+    (primitive ("/") div-prim)
     (primitive ("add1") incr-prim)
     (primitive ("sub1") decr-prim)
     
@@ -205,6 +206,12 @@
     (primitive ("append") append-list-prim)
     (primitive ("ref-list") index-list-prim)
     (primitive ("set-list") put-list-prim)
+
+    ;; Primitivas tuplas
+    
+    (primitive ("crear-tupla") create-param-tuple-prim)
+    (primitive ("tupla?") is-tuple-prim )
+    (primitive ("ref-tuple") index-tuple-prim )
 
     ;; Construcción del circuito
     (circuit ("C(" "circuit" "(" "gate-list" gate-list ")" ")") a-circuit)
@@ -230,10 +237,21 @@
 
     (expression ("[" (arbno expression) "]") list-exp)
 
+    (expression ("tuple" "[" (arbno expression) "]") tuple-exp)
+
     ))
 
 
 ;; for <identifier> in <expression> do <expression> done
+
+
+;; Datatypes de list y tuple index-list-prim
+
+(define-datatype lista lista?
+  (listica (l (list-of scheme-value?))))
+
+(define-datatype tupla tupla?
+  (tuplita (l (list-of scheme-value?))))
 
 ;Construidos automáticamente:
 (sllgen:make-define-datatypes the-lexical-spec the-grammar)
@@ -363,9 +381,14 @@
 
       (list-exp (elements)
                 (let ((vals (eval-rands elements env)))
-                          vals)
+                          (listica vals))
 
                 )
+      (tuple-exp (elements)
+                 (let ((vals (eval-rands elements env)))
+                          (tuplita vals))
+
+                 )
 
       )))
 
@@ -388,68 +411,122 @@
   (lambda (prim args env)
     (cases primitive prim
       ;; Primitivas aritméticas
-      (add-prim () (+ (car args) (cadr args)))
-      (substract-prim () (- (car args) (cadr args)))
-      (mult-prim () (* (car args) (cadr args)))
-      (incr-prim () (+ (car args) 1))
-      (decr-prim () (- (car args) 1))
+
+      (add-prim ()
+                (if (null? args) (eopl:error 'add-prim "No arguments provided")
+                    (let loop ((acc (car args)) (rest (cdr args)))
+                      (if (null? rest) acc
+                          (loop (+ acc (car rest)) (cdr rest))))))
+      
+      (substract-prim ()
+                (if (null? args) (eopl:error 'substract-prim "No arguments provided")
+                    (let loop ((acc (car args)) (rest (cdr args)))
+                      (if (null? rest) acc
+                          (loop (- acc (car rest)) (cdr rest))))))
+      (mult-prim ()
+                 (if (null? args) (eopl:error 'mult-prim "No arguments provided")
+                     (let loop ((acc (car args)) (rest (cdr args)))
+                       (if (null? rest) acc
+                           (loop (* acc (car rest)) (cdr rest))))))
+
+      (div-prim ()
+                (if (null? args) (eopl:error 'div-prim "No arguments provided")
+                    (let loop ((acc (car args))       
+                               (rest (cdr args)))    
+                      (if (null? rest) acc
+                          (let ((next (car rest)))
+                            (if (= next 0) (eopl:error 'div-prim "Division by zero")
+                                (loop (/ acc next) (cdr rest))))))))
+      
+      (incr-prim ()
+                 (if (null? args) (eopl:error 'incr-prim "No argument provided")
+                     (+ (car args) 1)))
+
+      (decr-prim ()
+                 (if (null? args) (eopl:error 'decr-prim "No argument provided")
+                     (- (car args) 1)))
+
+      ;; Listas
 
       (empty-list-prim () ;; Ya esta args evaluado
+                                     
               (let
                 (
-                  (val (car args) )
+                  (val (get-li (car args)) )
                 )
-                (if (list? val) (null? val)
-                  (eopl:error 'empty-list-prim "Not a list: ~s" val)
-                 )
+                  (cond
+                         [(lista? (car args)) (null? val)]
+                         [(tupla? (car args)) (null? val)]
+                         [(eopl:error 'empty-prim "Not a list or tuple: ~s" val)]
+
+                        )
               )                        
        )
 
-          ;(primitive ( "vacio" ) create-empty-list-prim)
-    ;(primitive ( "crear-lista" ) create-param-list-prim)
-
       (create-empty-list-prim ()
 
-                           '()
+                       (cond
+                         [(lista? (car args)) (listica '())]
+                         [(tupla? (car args)) (tuplita '())]
+                         [(eopl:error 'empty-prim "Not a list or tuple:")]
+                        ))
 
-                           )
 
       (create-param-list-prim ()
-
-                              (repetir (car args) (cadr args))
-
+                              (repetir (car args) (cadr args) 'lista)
                               )
 
       (is-list-prim ()
 
             (let ((val (car args))) 
-              (if (list? val)
+              (if (lista? val)
                 #t
                 #f))
             )
 
       (head-list-prim ()
-
-                      (car (car args))
-
-
+                      (car (get-li (car args)))
                       )
 
       (last-list-prim ()
-
-                      (last (car args))
-
+                      (last (get-li (car args)))
        )
 
       (append-list-prim ()
-
                         (putf (car args) (cadr args))
-
                         )
 
-      (index-list-prim () (list-pos (car args) (cadr args)))
+      (index-list-prim ()
+                       
+                       (if (lista? (car args)) (list-pos (get-li (car args)) (cadr args))
+                           (eopl:error 'empty-prim "Not a list"))
+ 
+                           )
 
-      (put-list-prim () (insertar-en-posicion (car args) (cadr args) (caddr args)))
+      (put-list-prim () (insertar-en-posicion (car args) (cadr args) (caddr args))) ; completar para no alterar tuplas
+
+      ;; Tuplas
+      
+
+      (create-param-tuple-prim ()
+                               (repetir (car args) (cadr args) 'tupla)  
+                               )
+
+      (is-tuple-prim ()
+
+            (let ((val (car args))) 
+              (if (tupla? val)
+                #t
+                #f))
+            )
+      
+      (index-tuple-prim ()
+                          (if (tupla? (car args)) (list-pos (get-li (car args)) (cadr args))
+                              (eopl:error 'empty-prim "Not a tuple"))
+                           
+                        )
+
+      
       
       ;; Primitiva: eval-circuit(circuito, entrada)
       (eval-circuit-prim ()
@@ -476,15 +553,47 @@
                                (merge-circuits circ1 circ2 gate-type new-name)))) ))) 
 
 ;Determina si es un valor booleano falso o verdadero
+
+
 (define true-value?
   (lambda (x)
     (not (zero? x))))
 
-(define repetir 
+(define repetir
+  (lambda (b a type)
+    (let
+        ((li (aux-repetir b a)))
+      ;(listica li)
+      (cond
+        [(eq? type 'lista) (listica li)]
+        [(eq? type 'tupla) (tuplita li)]
+        [else (eopl:error 'append "not data struct type provided")]
+        
+       )
+        )
+      )
+  )
+
+(define aux-repetir 
   (lambda (b a)
   (if (zero? a)
       '()
-      (cons b (repetir b (- a 1))))))
+      (cons b (aux-repetir b (- a 1))))))
+
+(define get-li
+  (lambda (li)
+    (cond 
+     [(lista? li) 
+      (cases lista li
+        (listica (l) l))]
+     
+     [(tupla? li) 
+      (cases tupla li
+        (tuplita (l) l))]
+
+     [else (eopl:error 'get-li "Not a data struct")]
+     
+    )))
 
 (define last 
   (lambda (lst)
@@ -492,11 +601,24 @@
       (car lst)
       (last (cdr lst)))))
 
-(define putf 
+(define putf
+  (lambda (lst elem) ;; lst es el struct o datatype
+    (cond
+      [(lista? lst)
+       (let
+          ((val (putf-aux (get-li lst) elem)))
+             (listica val)
+        )]
+      
+      ;; [(tupla? lst) (eopl:error 'append "Inmutable data struct, tuple")]
+      [else (eopl:error 'append "Not a list")]
+    )))
+
+(define putf-aux 
   (lambda (lst elem)
   (if (null? lst)
       (list elem)
-      (cons (car lst) (putf (cdr lst) elem)))))
+      (cons (car lst) (putf-aux (cdr lst) elem)))))
 
 (define list-pos
   (lambda (lst x)
@@ -506,12 +628,26 @@
 
 (define insertar-en-posicion
   (lambda (lst pos val)
+    (cond
+      [(lista? lst)
+       
+       (let
+        ((val (insertar-en-posicion-aux (get-li lst) pos val)))
+          (listica val)
+        )]
+      
+      ;; [(tupla? lst) (eopl:error 'append "Inmutable data struct, tuple")]
+      [else (eopl:error 'append "Not a list")]
+    )))
+
+(define insertar-en-posicion-aux
+  (lambda (lst pos val)
   (cond
     [(not (list? lst)) (eopl:error "Not a list")]
     [(negative? pos) (eopl:error "negative index")]
     [(zero? pos) (cons val lst)]
     [(null? lst) (eopl:error "index out of range")]
-    [else (cons (car lst) (insertar-en-posicion (cdr lst) (- pos 1) val))])))
+    [else (cons (car lst) (insertar-en-posicion-aux (cdr lst) (- pos 1) val))])))
 
 ;*******************************************************************************************
 ;; 5. Evaluación_De_Circuitos
