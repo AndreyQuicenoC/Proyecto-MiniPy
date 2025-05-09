@@ -372,10 +372,10 @@
       ;; Primitivas hexadecimales
       ;; hex+ : suma dos hexadecimales
       (add-hex-prim ()
-                    (let* ([raw1    (car args)]              
-                           [raw2    (car (cdr args))]        
-                           [ds1     (car (cdr raw1))]        
-                           [ds2     (car (cdr raw2))]        
+                    (let* ([raw1    (car args)]              ; -> '("x16" ds1)
+                           [raw2    (car (cdr args))]        ; -> '("x16" ds2)
+                           [ds1     (car (cdr raw1))]        ; extrae lista ds1
+                           [ds2     (car (cdr raw2))]        ; extrae lista ds2
                            [n1      (hex-list->decimal ds1)]
                            [n2      (hex-list->decimal ds2)]
                            [sum     (+ n1 n2)]
@@ -409,7 +409,7 @@
 
       ;; hexadd1 : incrementa
       (incr-hex-prim ()
-                     (let* ([raw     (car args)]             
+                     (let* ([raw     (car args)]             ; un solo arg
                             [ds      (car (cdr raw))]
                             [n       (hex-list->decimal ds)]
                             [inc     ( (+ 1 n))]
