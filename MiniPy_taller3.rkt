@@ -224,6 +224,12 @@
     (primitive ("tupla?") is-tuple-prim )
     (primitive ("ref-tuple") index-tuple-prim )
 
+    ;; Primitivas registros
+    (primitive ("crear-registro") create-param-record-prim)
+    (primitive ("registro?") is-record-prim )
+    (primitive ("ref-registro") index-record-prim )
+    (primitive ("set-registro") put-record-prim )
+
     ;; Construcción del circuito
     (circuit ("C(" "circuit" "(" "gate-list" gate-list ")" ")") a-circuit)
     (gate-list () empty-gate-list)
@@ -250,19 +256,23 @@
 
     (expression ("tuple" "[" (arbno expression) "]") tuple-exp)
 
+    (expression ("{" identifier "=" expression (arbno ";" identifier "=" expression) "}") record-exp)
     ))
 
 
 ;; for <identifier> in <expression> do <expression> done
 
 
-;; Datatypes de list y tuple index-list-prim
+;; Datatypes de list, tuple y registro index-list-prim
 
 (define-datatype lista lista?
   (listica (l (list-of scheme-value?))))
 
 (define-datatype tupla tupla?
   (tuplita (l (list-of scheme-value?))))
+
+(define-datatype registro registro?
+  (registrico (pairs (list-of pair?))))
 
 ;Construidos automáticamente:
 (sllgen:make-define-datatypes the-lexical-spec the-grammar)
@@ -386,15 +396,19 @@
 
       (list-exp (elements)
                 (let ((vals (eval-rands elements env)))
-                          (listica vals))
-
+                        (listica vals))
                 )
       (tuple-exp (elements)
-                 (let ((vals (eval-rands elements env)))
-                          (tuplita vals))
-
-                 )
-
+                (let ((vals (eval-rands elements env)))
+                        (tuplita vals))
+                )
+      (record-exp (key value keys values)
+                (let ((all-pairs (map (lambda (k v)
+                                        (cons (symbol->string k) (eval-expression v env)))
+                                      (cons key keys)
+                                      (cons value values))))
+                  (registrico all-pairs))
+                )
       )))
 
 
@@ -511,8 +525,6 @@
       (put-list-prim () (insertar-en-posicion (car args) (cadr args) (caddr args))) ; completar para no alterar tuplas
 
       ;; Tuplas
-      
-
       (create-param-tuple-prim ()
                                (repetir (car args) (cadr args) 'tupla)  
                                )
@@ -530,11 +542,31 @@
                               (eopl:error 'empty-prim "Not a tuple"))
                            
                         )
+      ;; Registros
+      (is-record-prim ()
+            (let ((val (car args))) 
+              (if (registro? val)
+                #t
+                #f))
+            )
+      (create-param-record-prim ()
+              (repetir (list (car args) (cadr args)) (caddr args) 'registro))
+      (index-record-prim ()
+                          (if (registro? (car args)) (list-pos (get-li (car args)) (cadr args))
+                              (eopl:error 'empty-prim "Not a record"))
+                        )
+      (put-record-prim () 
+              (let ((reg (car args))
+                    (pos (cadr args))
+                    (key (caddr args))
+                    (val (cadddr args)))
+                (insertar-en-posicion reg pos (cons key val))))
 
+      ;; Primitiva de módulo
       (mod-prim () (if (= (cadr args) 0)
                        (eopl:error 'apply-primitive "Division by zero")
                        (remainder (car args) (cadr args))))
-
+    
       ;; Primitivas hexadecimales
       ;; hex+ : suma dos hexadecimales
       (add-hex-prim ()
@@ -635,14 +667,16 @@
 (define repetir
   (lambda (b a type)
     (let
-        ((li (aux-repetir b a)))
+        ((li (cond
+                [(eq? type 'registro) (aux-repetir-registro b 0 a)]
+                [else (aux-repetir b a)]
+        )))
       ;(listica li)
       (cond
         [(eq? type 'lista) (listica li)]
         [(eq? type 'tupla) (tuplita li)]
-        [else (eopl:error 'append "not data struct type provided")]
-        
-       )
+        [(eq? type 'registro) (registrico li)]
+        [else (eopl:error 'append "not data struct type provided")])
         )
       )
   )
@@ -652,6 +686,15 @@
   (if (zero? a)
       '()
       (cons b (aux-repetir b (- a 1))))))
+
+(define aux-repetir-registro
+  (lambda (b i a)
+      (if (equal? i a)
+          '()
+          (cons (cons (string-append (car b) (number->string i)) 
+                     (cdr b))
+                (aux-repetir-registro b (+ i 1) a))
+)))
 
 (define get-li
   (lambda (li)
@@ -663,9 +706,11 @@
      [(tupla? li) 
       (cases tupla li
         (tuplita (l) l))]
+     [(registro? li) 
+      (cases registro li
+        (registrico (pairs) pairs))]
 
      [else (eopl:error 'get-li "Not a data struct")]
-     
     )))
 
 (define last 
@@ -682,7 +727,16 @@
           ((val (putf-aux (get-li lst) elem)))
              (listica val)
         )]
-      
+      [(registro? lst)
+       (let
+          ((val (putf-aux (get-li lst) elem)))
+             (registrico val)
+        )]
+      [(tupla? lst)
+       (let
+          ((val (putf-aux (get-li lst) elem)))
+             (tuplita val)
+        )]
       ;; [(tupla? lst) (eopl:error 'append "Inmutable data struct, tuple")]
       [else (eopl:error 'append "Not a list")]
     )))
@@ -695,20 +749,27 @@
 
 (define list-pos
   (lambda (lst x)
-  (if (zero? x)
-      (car lst)
-      (list-pos (cdr lst) (- x 1)))))
+    (cond
+      [(registro? lst) 
+       (list-pos (get-li lst) x)]
+      [else
+       (if (zero? x)
+           (car lst)
+           (list-pos (cdr lst) (- x 1)))])))
 
 (define insertar-en-posicion
   (lambda (lst pos val)
     (cond
       [(lista? lst)
-       
        (let
         ((val (insertar-en-posicion-aux (get-li lst) pos val)))
           (listica val)
         )]
-      
+      [(registro? lst)
+       (let
+        ((val (insertar-en-posicion-aux (get-li lst) pos val)))
+          (registrico val)
+        )]
       ;; [(tupla? lst) (eopl:error 'append "Inmutable data struct, tuple")]
       [else (eopl:error 'append "Not a list")]
     )))
