@@ -179,6 +179,7 @@
                 const-assign-exp)
     (expression ("set" identifier "=" expression)
                 set-exp)
+    (expression ("mostrar" "(" expression ")") mostrar-exp)
     (expression (bool) bool-exp)
     (expression (type) type-exp)
     (expression (circuit) circuit-exp)
@@ -191,6 +192,14 @@
     (primitive ("mod") mod-prim)
     (primitive ("add1") incr-prim)
     (primitive ("sub1") decr-prim)
+
+    ;; Primitivas booleanas
+    (primitive ("<") less-prim)
+    (primitive (">") greater-prim)
+    (primitive ("<=") less-equal-prim)
+    (primitive (">=") greater-equal-prim)
+    (primitive ("==") equal-prim)
+    (primitive ("<>") not-equal-prim) 
 
     ;; Primitivas hexadecimales
     (primitive ("hex+") add-hex-prim)
@@ -219,7 +228,6 @@
     (primitive ("set-list") put-list-prim)
 
     ;; Primitivas tuplas
-    
     (primitive ("crear-tupla") create-param-tuple-prim)
     (primitive ("tupla?") is-tuple-prim )
     (primitive ("ref-tuple") index-tuple-prim )
@@ -249,7 +257,7 @@
     
     ;; control structs
     (expression ("for" identifier "in" expression "do" expression "done") for-exp) ;; #1 -> iterative var, #2 -> data struct #3 -> body
-
+    (expression ("while" expression "do" expression "done") while-exp) ;; #1 -> condition, #2 -> body
     ;; data structs
 
     (expression ("[" (arbno expression) "]") list-exp)
@@ -379,6 +387,18 @@
                    (eopl:error 'set-exp "No se puede reasignar: ~s es const" id))
                  (setref! ref (eval-expression rhs-exp env))
                  1))
+      (mostrar-exp (exp)
+          (let ((val (eval-expression exp env)))
+            (cond
+              ;; Valores primitivos 
+              [(number? val) (display val)]
+              [(string? val) (display val)]
+              [(symbol? val) (display val)]
+              [(eq? val "True") (display #t)]
+              [(eq? val "False") (display #f)]
+              [else (display val)])
+            (newline)
+            val))
 
       (bool-exp (b)
                 (cases bool b
@@ -392,8 +412,53 @@
                   (xor-type () 'xor)))
       (circuit-exp (circ)
                    circ)
-      (for-exp (iter struct body) iter)
-
+      (for-exp (iter struct body)
+          (let ((estructura (eval-expression struct env)))
+            (cond
+              ;; Caso 1: Lista o tupla con exactamente 3 elementos numéricos (inicio, fin, paso)
+              [(and (or (lista? estructura) (tupla? estructura))
+                    (= (length (get-li estructura)) 3)
+                    (let ((elementos (get-li estructura)))
+                      (and (number? (car elementos))
+                          (number? (cadr elementos))
+                          (number? (caddr elementos)))))
+              (let* ((elementos (get-li estructura))
+                      (inicio (car elementos))
+                      (fin (cadr elementos))
+                      (paso (caddr elementos)))
+                (let loop ((i inicio)
+                            (last-val 1))
+                  (if (if (> paso 0) 
+                          (> i fin)    ;; Condición para paso positivo
+                          (< i fin))   ;; Condición para paso negativo
+                      last-val
+                      (let ((nuevo-env (extend-env (list iter) (list i) env)))
+                        (loop (+ i paso) (eval-expression body nuevo-env))))))]
+              
+              ;; Caso 2: Estructura iterable normal (comportamiento original)
+              [(or (< (length (get-li estructura)) 3)
+                    (> (length (get-li estructura)) 3))
+                    (let ((elements (get-li estructura)))
+                      (let loop ((items elements)
+                                  (last-val 1))
+                        (if (null? items)
+                            last-val
+                            (let ((item (car items))
+                                  (rest (cdr items)))
+                              (let ((nuevo-env (extend-env 
+                                                (list iter)
+                                                (list (if (pair? item) (cdr item) item))
+                                                env)))
+                                (loop rest (eval-expression body nuevo-env)))))))])))
+      (while-exp (test body)
+             (let loop ((test-exp (eval-expression test env))
+                       (body-exp (eval-expression body env)))
+               (if (true-value? test-exp)
+                   (let ((new-test (eval-expression test env)))
+                     (if (true-value? new-test)
+                         (loop new-test body-exp)
+                         body-exp))
+                   body-exp))) 
       (list-exp (elements)
                 (let ((vals (eval-rands elements env)))
                         (listica vals))
@@ -464,7 +529,37 @@
       (decr-prim ()
                  (if (null? args) (eopl:error 'decr-prim "No argument provided")
                      (- (car args) 1)))
-
+      ;; Primitivas booleanas
+      (less-prim ()
+                 (if (null? args) (eopl:error 'less-prim "No arguments provided")
+                     (let loop ((acc (car args)) (rest (cdr args)))
+                       (if (null? rest) acc
+                           (loop (< acc (car rest)) (cdr rest))))))
+      (greater-prim ()
+                    (if (null? args) (eopl:error 'greater-prim "No arguments provided")
+                        (let loop ((acc (car args)) (rest (cdr args)))
+                          (if (null? rest) acc
+                              (loop (> acc (car rest)) (cdr rest))))))
+      (less-equal-prim ()
+                    (if (null? args) (eopl:error 'less-equal-prim "No arguments provided")
+                        (let loop ((acc (car args)) (rest (cdr args)))
+                          (if (null? rest) acc
+                              (loop (<= acc (car rest)) (cdr rest))))))
+      (greater-equal-prim ()
+                    (if (null? args) (eopl:error 'greater-equal-prim "No arguments provided")
+                        (let loop ((acc (car args)) (rest (cdr args)))
+                          (if (null? rest) acc
+                              (loop (>= acc (car rest)) (cdr rest))))))
+      (equal-prim ()
+                 (if (null? args) (eopl:error 'equal-prim "No arguments provided")
+                     (let loop ((acc (car args)) (rest (cdr args)))
+                       (if (null? rest) acc
+                           (loop (= acc (car rest)) (cdr rest))))))
+      (not-equal-prim ()
+                 (if (null? args) (eopl:error 'not-equal-prim "No arguments provided")
+                     (let loop ((acc (car args)) (rest (cdr args)))
+                       (if (null? rest) acc
+                           (loop (not (= acc (car rest))) (cdr rest))))))
       ;; Listas
 
       (empty-list-prim () ;; Ya esta args evaluado
@@ -539,9 +634,9 @@
       
       (index-tuple-prim ()
                           (if (tupla? (car args)) (list-pos (get-li (car args)) (cadr args))
-                              (eopl:error 'empty-prim "Not a tuple"))
-                           
+                              (eopl:error 'empty-prim "Not a tuple"))                           
                         )
+
       ;; Registros
       (is-record-prim ()
             (let ((val (car args))) 
