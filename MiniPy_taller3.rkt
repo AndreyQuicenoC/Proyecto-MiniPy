@@ -757,7 +757,19 @@
 
 (define true-value?
   (lambda (x)
-    (not (zero? x))))
+    (cond    
+      ;; Booleanos de MiniPy (pueden venir como símbolos o strings)
+      [(eq? x #t) #t]
+      [(eq? x #f) #f] 
+      ;; Booleanos de MiniPy (pueden venir como símbolos o strings)
+      [(eq? x 'True) #t]
+      [(eq? x "True") #t] 
+      [(eq? x 'False) #f]
+      [(eq? x "False") #f]
+      ;; Valores numéricos (0 es falso, el resto verdadero)
+      [(number? x) (not (zero? x))]
+      ;; Por defecto, cualquier otro valor se considera verdadero
+      [else #t])))
 
 (define repetir
   (lambda (b a type)
