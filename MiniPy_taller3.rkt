@@ -1,7 +1,5 @@
 #lang eopl
 
-
-
 ;; ======================================================================================
 ;;
 ;;  /$$$$$$$  /$$$$$$$   /$$$$$$  /$$     /$$ /$$$$$$$$  /$$$$$$  /$$$$$$$$ /$$$$$$
@@ -106,10 +104,12 @@
 ;; 9. Procedimientos_
 ;; 10. Ambientes_
 ;; 11. Funciones_Para_Asignación_De_Variables
-;; 11. Funciones_Auxiliares_Para_Encontrar_La_Posición_De_Un_Símbolo
-;; 12. Pruebas de funciones principales
+;; 12. Funciones_Auxiliares_Para_Encontrar_La_Posición_De_Un_Símbolo
+;; 13. Funciones_Auxiliares_Para_Hexadecimales
+;; 14. Pruebas
 ;; ========================================================================================
 ;;*******************************************************************************************
+
 
 
 ;; 1. Especificación_Léxica
@@ -138,6 +138,7 @@
      ("-" digit (arbno digit))
      number)))
 ;;*******************************************************************************************
+
 
 
 ;; 2. Especificación_Sintáctica (gramática)
@@ -216,7 +217,6 @@
     (primitive ("merge-circuits") merge-circuits-prim)
 
     ;; Primitivas listas
-
     (primitive ( "vacio?" ) empty-list-prim)
     (primitive ( "vacio" ) create-empty-list-prim)
     (primitive ( "crear-lista" ) create-param-list-prim)
@@ -235,6 +235,7 @@
 
     ;; Primitivas registros
     (primitive ("crear-registro") create-param-record-prim)
+    (primitive ("crear-registro-veloz") create-param-record-fast-prim)
     (primitive ("registro?") is-record-prim )
     (primitive ("ref-registro") index-record-prim )
     (primitive ("set-registro") set-record-prim )
@@ -259,39 +260,23 @@
     ;; control structs
     (expression ("for" identifier "in" expression "do" expression "done") for-exp) ;; #1 -> iterative var, #2 -> data struct #3 -> body
     (expression ("while" expression "do" expression "done") while-exp) ;; #1 -> condition, #2 -> body
+    
     ;; data structs
-
     (expression ("[" (arbno expression) "]") list-exp)
-
     (expression ("tuple" "[" (arbno expression) "]") tuple-exp)
-
     (expression ("{" identifier "=" expression (arbno ";" identifier "=" expression) "}") record-exp)
-    ))
-
-
-;; for <identifier> in <expression> do <expression> done
-
-
-;; Datatypes de list, tuple y registro index-list-prim
-
-(define-datatype lista lista?
-  (listica (l (list-of scheme-value?))))
-
-(define-datatype tupla tupla?
-  (tuplita (l (list-of scheme-value?))))
-
-(define-datatype registro registro?
-  (registrico (pairs (list-of pair?))))
+))
 
 ;Construidos automáticamente:
 (sllgen:make-define-datatypes the-lexical-spec the-grammar)
 (define show-the-datatypes
   (lambda () (sllgen:list-define-datatypes the-lexical-spec the-grammar)))
+;;*******************************************************************************************
 
-;*******************************************************************************************
+
+
 ;; 3. Parser_Scanner_Interfaz
 ;*******************************************************************************************
-
 
 ;El FrontEnd (Análisis léxico (scanner) y sintáctico (parser) integrados)
 (define scan&parse
@@ -311,11 +296,13 @@
 
 ;*******************************************************************************************
 
+
+
 ;; 4. Evaluación_De_Expresiones
 ;*******************************************************************************************
+
 ;eval-program: <programa> -> numero
 ; función que evalúa un programa teniendo en cuenta un ambiente dado (se inicializa dentro del programa)
-
 (define eval-program
   (lambda (pgm)
     (cases program pgm
@@ -332,7 +319,7 @@
   (lambda (exp env)
     (cases expression exp
       (hex-exp (d1 ds)
-               (list "x16" (cons d1 ds)))
+              (list "x16" (cons d1 ds)))
       (lit-exp (datum) datum)
       (string-exp (datum) (substring datum 1 (- (string-length datum) 1))) ; elimina las comillas
       (var-exp (id) (apply-env env id))
@@ -353,7 +340,7 @@
                   (eval-expression true-exp env)
                   (eval-expression false-exp env)))
       (proc-exp (ids body)
-                (closure ids body env))
+              (closure ids body env))
       (app-exp (rator rands)
                (let* ((proc     (eval-expression rator env))
                       ;; args iniciales sin ref
@@ -385,40 +372,38 @@
                              (loop (cdr fs))))))))
       
       (letrec-exp (proc-names idss bodies letrec-body)
-                  (eval-expression letrec-body
-                                   (extend-env-recursively proc-names idss bodies env)))
+              (eval-expression letrec-body
+                  (extend-env-recursively proc-names idss bodies env)))
       (begin-exp (exp exps)
-                 (let loop ((acc (eval-expression exp env))
-                            (exps exps))
-                   (if (null? exps)
-                       acc
-                       (loop (eval-expression (car exps)
-                                              env)
-                             (cdr exps)))))
+              (let loop 
+                  ((acc (eval-expression exp env)) (exps exps))
+                  (if (null? exps)
+                      acc
+                      (loop (eval-expression (car exps) env)
+                          (cdr exps)))))
       (var-assign-exp (ids rands body)
                       (let ((vals (eval-let-exp-rands rands env)))
                         (let ((env2 (extend-env ids vals env)))
                           (eval-expression body env2))))
       ;; Constant definition, uses env extend to process
       (const-assign-exp (ids rands body)
-                        (let ((vals (eval-rands rands env)))
-                          (eval-expression
-                           body
-                           (extend-const-env ids vals env))))
+              (let ((vals (eval-rands rands env)))
+                  (eval-expression
+                      body
+                      (extend-const-env ids vals env))))
       (set-exp (id rhs-exp)
-               (let ((ref  (apply-env-ref env id))
-                     (muts (cases environment env
-                             (empty-env-record ()
-                                               (eopl:error 'set-exp "No binding for ~s" id))
-                             (extended-env-record (syms _ muts parent)
-                                                  (let ((i (list-index (lambda (s) (eq? s id)) syms)))
-                                                    (if (number? i)
-                                                        (vector-ref muts i)
-                                                        (apply-env-ref parent id)))))))
-                 (unless muts
-                   (eopl:error 'set-exp "No se puede reasignar: ~s es const" id))
-                 (setref! ref (eval-expression rhs-exp env))
-                 1))
+              (let ((ref  (apply-env-ref env id))
+                  (muts 
+                      (cases environment env
+                          (empty-env-record ()
+                              (eopl:error 'set-exp "No binding for ~s" id))
+                          (extended-env-record (syms _ muts parent)
+                              (let ((i (list-index (lambda (s) (eq? s id)) syms)))
+                                  (if (number? i)
+                                      (vector-ref muts i)
+                                      (apply-env-ref parent id)))))))
+                 (unless muts (eopl:error 'set-exp "No se puede reasignar: ~s es const" id))
+                 (setref! ref (eval-expression rhs-exp env)) 1))
       (mostrar-exp (exp)
                    (let ((val (eval-expression exp env)))
                      (cond
@@ -432,18 +417,21 @@
                      (newline)
                      val))
 
+      ;; Expresiones para circuitos
       (bool-exp (b)
-                (cases bool b
+              (cases bool b
                   (true-lit () #t)
                   (false-lit () #f)))
       (type-exp (ty)
-                (cases type ty
+              (cases type ty
                   (and-type () 'and)
                   (or-type () 'or)
                   (not-type () 'not)
                   (xor-type () 'xor)))
       (circuit-exp (circ)
-                   circ)
+              circ)
+
+      ; Expresiones de control
       (for-exp (iter struct body)
                (let ((estructura (eval-expression struct env)))
                  (cond
@@ -560,114 +548,90 @@
 (define apply-primitive
   (lambda (prim args env)
     (cases primitive prim
-      ;; Primitivas aritméticas
 
+      ;; Primitivas aritméticas
       (add-prim ()
-                (if (null? args) (eopl:error 'add-prim "No arguments provided")
-                    (let loop ((acc (car args)) (rest (cdr args)))
+              (if (null? args) (eopl:error 'add-prim "No arguments provided")
+                  (let loop ((acc (car args)) (rest (cdr args)))
                       (if (null? rest) acc
                           (loop (+ acc (car rest)) (cdr rest))))))
-
       (substract-prim ()
-                      (if (null? args) (eopl:error 'substract-prim "No arguments provided")
-                          (let loop ((acc (car args)) (rest (cdr args)))
-                            (if (null? rest) acc
-                                (loop (- acc (car rest)) (cdr rest))))))
+              (if (null? args) (eopl:error 'substract-prim "No arguments provided")
+                  (let loop ((acc (car args)) (rest (cdr args)))
+                      (if (null? rest) acc
+                          (loop (- acc (car rest)) (cdr rest))))))
       (mult-prim ()
-                 (if (null? args) (eopl:error 'mult-prim "No arguments provided")
-                     (let loop ((acc (car args)) (rest (cdr args)))
-                       (if (null? rest) acc
-                           (loop (* acc (car rest)) (cdr rest))))))
-
+              (if (null? args) (eopl:error 'mult-prim "No arguments provided")
+                  (let loop ((acc (car args)) (rest (cdr args)))
+                      (if (null? rest) acc
+                          (loop (* acc (car rest)) (cdr rest))))))
       (div-prim ()
-                (if (null? args) (eopl:error 'div-prim "No arguments provided")
-                    (let loop ((acc (car args))
-                               (rest (cdr args)))
+              (if (null? args) (eopl:error 'div-prim "No arguments provided")
+                  (let loop ((acc (car args)) (rest (cdr args)))    
                       (if (null? rest) acc
                           (let ((next (car rest)))
-                            (if (= next 0) (eopl:error 'div-prim "Division by zero")
-                                (loop (/ acc next) (cdr rest))))))))
-
+                              (if (= next 0) (eopl:error 'div-prim "Division by zero")
+                                  (loop (/ acc next) (cdr rest))))))))
       (incr-prim ()
-                 (if (null? args) (eopl:error 'incr-prim "No argument provided")
-                     (+ (car args) 1)))
-
+              (if (null? args) (eopl:error 'incr-prim "No argument provided")
+                  (+ (car args) 1)))
       (decr-prim ()
-                 (if (null? args) (eopl:error 'decr-prim "No argument provided")
-                     (- (car args) 1)))
+              (if (null? args) (eopl:error 'decr-prim "No argument provided")
+                  (- (car args) 1)))
+
       ;; Primitivas booleanas
       (less-prim ()
-                 (if (null? args) (eopl:error 'less-prim "No arguments provided")
-                     (let loop ((acc (car args)) (rest (cdr args)))
-                       (if (null? rest) acc
-                           (loop (< acc (car rest)) (cdr rest))))))
+              (if (null? args) (eopl:error 'less-prim "No arguments provided")
+                  (let loop ((acc (car args)) (rest (cdr args)))
+                      (if (null? rest) acc
+                          (loop (< acc (car rest)) (cdr rest))))))
       (greater-prim ()
-                    (if (null? args) (eopl:error 'greater-prim "No arguments provided")
-                        (let loop ((acc (car args)) (rest (cdr args)))
-                          (if (null? rest) acc
-                              (loop (> acc (car rest)) (cdr rest))))))
+              (if (null? args) (eopl:error 'greater-prim "No arguments provided")
+                  (let loop ((acc (car args)) (rest (cdr args)))
+                      (if (null? rest) acc
+                          (loop (> acc (car rest)) (cdr rest))))))
       (less-equal-prim ()
-                       (if (null? args) (eopl:error 'less-equal-prim "No arguments provided")
-                           (let loop ((acc (car args)) (rest (cdr args)))
-                             (if (null? rest) acc
-                                 (loop (<= acc (car rest)) (cdr rest))))))
+              (if (null? args) (eopl:error 'less-equal-prim "No arguments provided")
+                  (let loop ((acc (car args)) (rest (cdr args)))
+                      (if (null? rest) acc
+                          (loop (<= acc (car rest)) (cdr rest))))))
       (greater-equal-prim ()
-                          (if (null? args) (eopl:error 'greater-equal-prim "No arguments provided")
-                              (let loop ((acc (car args)) (rest (cdr args)))
-                                (if (null? rest) acc
-                                    (loop (>= acc (car rest)) (cdr rest))))))
+              (if (null? args) (eopl:error 'greater-equal-prim "No arguments provided")
+                  (let loop ((acc (car args)) (rest (cdr args)))
+                      (if (null? rest) acc
+                          (loop (>= acc (car rest)) (cdr rest))))))
       (equal-prim ()
-                  (if (null? args) (eopl:error 'equal-prim "No arguments provided")
-                      (let loop ((acc (car args)) (rest (cdr args)))
-                        (if (null? rest) acc
-                            (loop (= acc (car rest)) (cdr rest))))))
+              (if (null? args) (eopl:error 'equal-prim "No arguments provided")
+                  (let loop ((acc (car args)) (rest (cdr args)))
+                      (if (null? rest) acc
+                          (loop (= acc (car rest)) (cdr rest))))))
       (not-equal-prim ()
-                      (if (null? args) (eopl:error 'not-equal-prim "No arguments provided")
-                          (let loop ((acc (car args)) (rest (cdr args)))
-                            (if (null? rest) acc
-                                (loop (not (= acc (car rest))) (cdr rest))))))
-      ;; Listas
+              (if (null? args) (eopl:error 'not-equal-prim "No arguments provided")
+                  (let loop ((acc (car args)) (rest (cdr args)))
+                      (if (null? rest) acc
+                          (loop (not (= acc (car rest))) (cdr rest))))))
 
-      (empty-list-prim () ;; Ya esta args evaluado
-
-                       (let
-                           (
-                            (val (get-li (car args)) )
-                            )
-                         (cond
-                           [(lista? (car args)) (null? val)]
-                           [(tupla? (car args)) (null? val)]
-                           [(eopl:error 'empty-prim "Not a list or tuple: ~s" val)]
-
-                           )
-                         )
-                       )
-
+      ;; Primitivas de listas
+      (empty-list-prim ()                    
+              (let ((val (get-li (car args))))
+                  (cond
+                      [(lista? (car args)) (null? val)]
+                      [(tupla? (car args)) (null? val)]
+                      [(eopl:error 'empty-prim "Not a list or tuple: ~s" val)])))
       (create-empty-list-prim ()
-
-                              (cond
-                                [(lista? (car args)) (listica '())]
-                                [(tupla? (car args)) (tuplita '())]
-                                [(eopl:error 'empty-prim "Not a list or tuple:")]
-                                ))
-
-
+              (cond
+                  [(lista? (car args)) (listica '())]
+                  [(tupla? (car args)) (tuplita '())]
+                  [(eopl:error 'empty-prim "Not a list or tuple:")]))
       (create-param-list-prim ()
-                              (repetir (car args) (cadr args) 'lista)
-                              )
-
+              (repetir (car args) (cadr args) 'lista))
       (is-list-prim ()
-
-                    (let ((val (car args)))
-                      (if (lista? val)
-                          #t
-                          #f))
-                    )
-
+              (let ((val (car args))) 
+                  (if (lista? val)
+                      #t
+                      #f)))
       (head-list-prim ()
-                      (car (get-li (car args)))
-                      )
-
+              (car (get-li (car args))))
       (last-list-prim ()
                       (last (get-li (car args)))
                       )
@@ -769,140 +733,140 @@
                     raw-tgt))
       ;; Tuplas
       (create-param-tuple-prim ()
-                               (repetir (car args) (cadr args) 'tupla)
-                               )
-
+              (repetir (car args) (cadr args) 'tupla))
       (is-tuple-prim ()
-
-                     (let ((val (car args)))
-                       (if (tupla? val)
-                           #t
-                           #f))
-                     )
-
+              (let ((val (car args))) 
+                  (if (tupla? val)
+                      #t
+                      #f)))   
       (index-tuple-prim ()
-                        (if (tupla? (car args)) (list-pos (get-li (car args)) (cadr args))
-                            (eopl:error 'empty-prim "Not a tuple"))
-                        )
+              (if (tupla? (car args)) (list-pos (get-li (car args)) (cadr args))
+                  (eopl:error 'empty-prim "Not a tuple")))
 
       ;; Registros
       (is-record-prim ()
-                      (let ((val (car args)))
-                        (if (registro? val)
-                            #t
-                            #f))
-                      )
+              (let ((val (car args))) 
+                  (if (registro? val)
+                      #t
+                      #f)))
+      (create-param-record-fast-prim ()
+              (repetir (list (car args) (cadr args)) (caddr args) 'registro))
       (create-param-record-prim ()
-                                (repetir (list (car args) (cadr args)) (caddr args) 'registro))
+              (let ((keys (get-li (car args)))    
+                  (values (get-li (cadr args)))) 
+              (if (not (= (length keys) (length values)))
+                  (eopl:error 'create-param-record-prim "Number of keys and values must match")
+                  (let ((all-pairs 
+                      (map 
+                          (lambda (k v)
+                              (cons (symbol->string k) v))
+                          keys values)))
+                      (registrico all-pairs)))))
       (index-record-prim ()
-                         (if (registro? (car args)) (list-pos (get-li (car args)) (cadr args))
-                             (eopl:error 'empty-prim "Not a record"))
-                         )
-      (set-record-prim ()
-                       (let ((reg (car args))
-                             (pos (cadr args))
-                             (key (caddr args))
-                             (val (cadddr args)))
-                         (insertar-en-posicion reg pos (cons key val))))
+              (if (and (registro? (car args)) (symbol? (cadr args))) 
+                  (record-pos (get-li (car args)) (cadr args))
+                  (eopl:error 'empty-or-wrong-prim "Not a record or not a key")))
+      (set-record-prim () 
+              (let ((reg (car args)) 
+                  (key (cadr args)) 
+                  (val (caddr args)))
+                  (if (and (registro? reg) (symbol? key))
+                      (insertar-en-posicion reg key val)
+                      (eopl:error 'empty-or-wrong-prim "Not a record or not a key"))))
 
-      ;; Primitiva de módulo
-      (mod-prim () (if (= (cadr args) 0)
-                       (eopl:error 'apply-primitive "Division by zero")
-                       (remainder (car args) (cadr args))))
-
+      ;; Primitiva de módulo-.
+      (mod-prim () 
+              (if (= (cadr args) 0)
+                  (eopl:error 'apply-primitive "Division by zero")
+                  (remainder (car args) (cadr args))))
+    
       ;; Primitivas hexadecimales
-      ;; hex+ : suma dos hexadecimales
-      (add-hex-prim ()
-                    (let* ([raw1    (car args)]
-                           [raw2    (car (cdr args))]
-                           [ds1     (car (cdr raw1))]
-                           [ds2     (car (cdr raw2))]
-                           [n1      (hex-list->decimal ds1)]
-                           [n2      (hex-list->decimal ds2)]
-                           [sum     (+ n1 n2)]
-                           [out-ds  (decimal->hex-list sum)])
-                      (list "x16" out-ds)))
+      (add-hex-prim () ;; hex+ : suma dos hexadecimales
+              (let* ([raw1    (car args)]              
+                  [raw2    (car (cdr args))]        
+                  [ds1     (car (cdr raw1))]        
+                  [ds2     (car (cdr raw2))]        
+                  [n1      (hex-list->decimal ds1)]
+                  [n2      (hex-list->decimal ds2)]
+                  [sum     (+ n1 n2)]
+                  [out-ds  (decimal->hex-list sum)])
+                  (list "x16" out-ds)))
+      (sub-hex-prim () ;; hex- : resta (error si negativo)
+              (let* ([raw1    (car args)]
+                  [raw2    (car (cdr args))]
+                  [ds1     (car (cdr raw1))]
+                  [ds2     (car (cdr raw2))]
+                  [n1      (hex-list->decimal ds1)]
+                  [n2      (hex-list->decimal ds2)]
+                  [diff    (- n1 n2)])
+                  (if (< diff 0)
+                      (eopl:error 'sub-hex-prim "Resultado negativo")
+                      (list "x16" (decimal->hex-list diff)))))
+      (mult-hex-prim () ;; hex* : multiplicación
+              (let* ([raw1    (car args)]
+                  [raw2    (car (cdr args))]
+                  [ds1     (car (cdr raw1))]
+                  [ds2     (car (cdr raw2))]
+                  [n1      (hex-list->decimal ds1)]
+                  [n2      (hex-list->decimal ds2)]
+                  [prod    (* n1 n2)]
+                  [out-ds  (decimal->hex-list prod)])
+                  (list "x16" out-ds)))
+      (incr-hex-prim () ;; hexadd1 : incrementa
+              (let* ([raw     (car args)]             
+                  [ds      (car (cdr raw))]
+                  [n       (hex-list->decimal ds)]
+                  [inc     ( (+ 1 n))]
+                  [out-ds  (decimal->hex-list inc)])
+                  (list "x16" out-ds)))
+      (decr-hex-prim () ;; hexsub1 : decrementa (error si negativo)
+              (let* ([raw     (car args)]
+                  [ds      (car (cdr raw))]
+                  [n       (hex-list->decimal ds)]
+                  [dec     ( (- n 1))])
+                  (if (< dec 0)
+                      (eopl:error 'decr-hex-prim "Resultado negativo")
+                      (list "x16" (decimal->hex-list dec)))))
 
-      ;; hex- : resta (error si negativo)
-      (sub-hex-prim ()
-                    (let* ([raw1    (car args)]
-                           [raw2    (car (cdr args))]
-                           [ds1     (car (cdr raw1))]
-                           [ds2     (car (cdr raw2))]
-                           [n1      (hex-list->decimal ds1)]
-                           [n2      (hex-list->decimal ds2)]
-                           [diff    (- n1 n2)])
-                      (if (< diff 0)
-                          (eopl:error 'sub-hex-prim "Resultado negativo")
-                          (list "x16" (decimal->hex-list diff)))))
-
-      ;; hex* : multiplicación
-      (mult-hex-prim ()
-                     (let* ([raw1    (car args)]
-                            [raw2    (car (cdr args))]
-                            [ds1     (car (cdr raw1))]
-                            [ds2     (car (cdr raw2))]
-                            [n1      (hex-list->decimal ds1)]
-                            [n2      (hex-list->decimal ds2)]
-                            [prod    (* n1 n2)]
-                            [out-ds  (decimal->hex-list prod)])
-                       (list "x16" out-ds)))
-
-      ;; hexadd1 : incrementa
-      (incr-hex-prim ()
-                     (let* ([raw     (car args)]
-                            [ds      (car (cdr raw))]
-                            [n       (hex-list->decimal ds)]
-                            [inc     ( (+ 1 n))]
-                            [out-ds  (decimal->hex-list inc)])
-                       (list "x16" out-ds)))
-
-      ;; hexsub1 : decrementa (error si negativo)
-      (decr-hex-prim ()
-                     (let* ([raw     (car args)]
-                            [ds      (car (cdr raw))]
-                            [n       (hex-list->decimal ds)]
-                            [dec     ( (- n 1))])
-                       (if (< dec 0)
-                           (eopl:error 'decr-hex-prim "Resultado negativo")
-                           (list "x16" (decimal->hex-list dec)))))
-
-      ;; Primitivas de cadenas:
+      ;; Primitivas de cadenas
       (string-length-prim ()
-                          (let* ([s (car args)]             ; el string real, sin comillas
-                                 [n (string-length s)])
-                            (if (> n 1)
-                                (bool-exp (true-lit))      ; construye el AST “True”
-                                (bool-exp (false-lit)))))  ; o el AST “False”
+              (let* ([s (car args)]             ; el string real, sin comillas
+                  [n (string-length s)])
+                  (if (> n 1)
+                      (bool-exp (true-lit))      ; construye el AST “True”
+                      (bool-exp (false-lit)))))  ; o el AST “False”
       (string-append-prim ()
                           (apply string-append args))
       ;; Primitiva: eval-circuit(circuito, entrada)
       (eval-circuit-prim ()
                          (let ((circ (car args)))
                            (eval-circuit circ env)))
+      (connect-circuits-prim () ;; Primitiva: connect-circuits(c1, c2, input)
+              (connect-circuits (car args) (cadr args) (caddr args)))
+      (merge-circuits-prim () ;; Primitiva: merge-circuits(c1, c2, tipo, nombre)
+              (let ((circ1 (car args))
+                  (circ2 (cadr args))
+                  (type-symbol (caddr args)) ; Símbolo como 'and
+                  (new-name (cadddr args)))  ; Nombre de la nueva compuerta (debe ser un símbolo)
+                  (let ((gate-type 
+                      (case type-symbol
+                          ('and (and-type))
+                          ('or (or-type))
+                          ('xor (xor-type)))))
+                      (merge-circuits circ1 circ2 gate-type new-name))))))) 
 
 
-      ;; Primitiva: connect-circuits(c1, c2, input)
-      (connect-circuits-prim ()
-                             (connect-circuits (car args) (cadr args) (caddr args)))
+;; Datatypes de list, tuple y registro para index-list-prim
+(define-datatype lista lista?
+  (listica (l (list-of scheme-value?))))
 
-      ;; Primitiva: merge-circuits(c1, c2, tipo, nombre)
-      (merge-circuits-prim ()
-                           (let ((circ1 (car args))
-                                 (circ2 (cadr args))
-                                 (type-symbol (caddr args)) ; Símbolo como 'and
-                                 (new-name (cadddr args)))  ; Nombre de la nueva compuerta (debe ser un símbolo)
-                             (let ((gate-type
-                                    (case type-symbol
-                                      ('and (and-type))
-                                      ('or (or-type))
-                                      ('xor (xor-type))
-                                      )))
-                               (merge-circuits circ1 circ2 gate-type new-name)))) )))
+(define-datatype tupla tupla?
+  (tuplita (l (list-of scheme-value?))))
+
+(define-datatype registro registro?
+  (registrico (pairs (list-of pair?))))
 
 ;Determina si es un valor booleano falso o verdadero
-
-
 (define true-value?
   (lambda (x)
     (cond
@@ -919,14 +883,14 @@
       ;; Por defecto, cualquier otro valor se considera verdadero
       [else #t])))
 
+; Repetir: función auxiliar para crear listas, tuplas o registros con valores repetidos
 (define repetir
   (lambda (b a type)
     (let
-        ((li (cond
-               [(eq? type 'registro) (aux-repetir-registro b 0 a)]
-               [else (aux-repetir b a)]
-               )))
-      ;(listica li)
+      ((li 
+        (cond
+          [(eq? type 'registro) (aux-repetir-registro b 0 a)]
+          [else (aux-repetir b a)] )))
       (cond
         [(eq? type 'lista) (listica li)]
         [(eq? type 'tupla) (tuplita li)]
@@ -942,6 +906,8 @@
         '()
         (cons b (aux-repetir b (- a 1))))))
 
+; Auxiliar de repetir: crea un registro con la clave-valor b repetido a veces 
+;    - diferenciando claves con indices
 (define aux-repetir-registro
   (lambda (b i a)
     (if (equal? i a)
@@ -951,6 +917,7 @@
               (aux-repetir-registro b (+ i 1) a))
         )))
 
+; get-li: función auxiliar para obtener el valor de una lista, tupla o registro
 (define get-li
   (lambda (li)
     (cond
@@ -1016,6 +983,7 @@
           (cons (car lst)
                 (putf-aux (cdr lst) val))))))
 
+; list-pos: función auxiliar para obtener el elemento en la posición x de una lista
 (define list-pos
   (lambda (lst x)
     (cond
@@ -1026,6 +994,17 @@
            (car lst)
            (list-pos (cdr lst) (- x 1)))])))
 
+; list-pos: función auxiliar para obtener el elemento en la clave x de un registro
+(define record-pos
+  (lambda (lst x)
+    (if (null? lst)
+      (eopl:error 'regis-key "Not a key on the record")
+      (let ((pair (car lst)))
+        (if (eq? x (string->symbol (car pair)))
+          (cdr pair)
+          (record-pos (cdr lst) x))))))
+
+; insert-en-posicion: función auxiliar para insertar un elemento en una lista, tupla o registro
 (define insertar-en-posicion
   (lambda (lst pos val)
     (cond
@@ -1043,6 +1022,7 @@
       [else (eopl:error 'append "Not a list")]
       )))
 
+; insertar-en-posicion-aux: función auxiliar para insertar un elemento en una lista
 (define insertar-en-posicion-aux
   (lambda (lst pos val)
     (let ((new-cell
@@ -1074,7 +1054,19 @@
 
 
 
+; insertar-en-clave-aux: función auxiliar para insertar un elemento en un registro
+(define insertar-en-clave-aux
+  (lambda (lst key val)
+    (cond
+      [(null? lst) (eopl:error "empty-record")]
+      [(null? (cdr lst)) (eopl:error "key not found")]
+      [(eq? key (string->symbol (car (car lst)))) 
+      (cons (cons (car (car lst)) val) (cdr lst))]
+      [else (cons (cons (car lst) (cdr lst)) (insertar-en-clave-aux (cdr lst) key val))])))
 ;*******************************************************************************************
+
+
+
 ;; 5. Evaluación_De_Circuitos
 ;*******************************************************************************************
 
@@ -1156,6 +1148,9 @@
                       (inps (cdr lst) (+ count (if (car lst) 1 0)))))))))
 
 ;*******************************************************************************************
+
+
+
 ;; 6. Conexión_De_Circuitos_En_Serie: se llama a connect-circuits
 ;*******************************************************************************************
 
@@ -1178,6 +1173,9 @@
 
 
 ;*******************************************************************************************
+
+
+
 ;; 7. Conexión_De_Circuitos_En_Paralelo: se llama a merge-circuits
 ;*******************************************************************************************
 
@@ -1211,9 +1209,8 @@
 
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 8. Funciones_Auxiliares
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;*******************************************************************************************
 
 ;a) get-last-gate-id: obtiene el identificador (id) de la última compuerta en una lista de compuertas (gate-list)
 ;   gl: lista de compuertas a analizar
@@ -1290,7 +1287,11 @@
 
 
 ;*******************************************************************************************
+
+
+
 ;; 9. Procedimientos
+;*******************************************************************************************
 (define-datatype procval procval?
   (closure
    (ids (list-of symbol?))
@@ -1301,13 +1302,18 @@
 ;*******************************************************************************************
 ;;;;;;;;;;;;;;;;; procedures of plane objects interpreter ;;;;;;;;;;;;;;;;
 
+; apply-procval: evalua el cuerpo de un procedimientos en el ambiente extendido correspondiente
 (define apply-procval
   (lambda (proc args)
     (cases procval proc
       (closure (ids body env)
                (eval-expression body (extend-env ids args env))))))
+;*******************************************************************************************
+
+
 
 ;; 10. Ambientes
+;*******************************************************************************************
 
 ;definición del tipo de dato ambiente
 (define-datatype environment environment?
@@ -1318,14 +1324,15 @@
    (muts vector?)
    (env environment?)))
 
-(define scheme-value? (lambda (v) #t))
+(define scheme-value? 
+  (lambda (v) 
+    #t))
 
 ;empty-env:      -> enviroment
 ;función que crea un ambiente vacío
 (define empty-env
   (lambda ()
     (empty-env-record)))       ;llamado al constructor de ambiente vacío
-
 
 ;extend-env: <list-of symbols> <list-of numbers> enviroment -> enviroment
 ;función que crea un ambiente extendido
@@ -1338,6 +1345,8 @@
      (make-vector (length syms) #t)
      env)))
 
+; extend-const-env: <list-of symbols> <list-of numbers> enviroment -> enviroment
+; - correspondiente a extend-env pero para variables constantes
 (define extend-const-env
   (lambda (syms vals env)
     (extended-env-record
@@ -1347,11 +1356,8 @@
      (make-vector (length syms) #f)
      env)))
 
-
-
-
-;extend-env-recursively: <list-of symbols> <list-of <list-of symbols>> <list-of expressions> environment -> environment
-;función que crea un ambiente extendido para procedimientos recursivos
+; extend-env-recursively: <list-of symbols> <list-of <list-of symbols>> <list-of expressions> environment -> environment
+; - función que crea un ambiente extendido para procedimientos recursivos
 (define extend-env-recursively
   (lambda (proc-names idss bodies old-env)
     (let ((len (length proc-names))
@@ -1367,12 +1373,14 @@
            idxs idss bodies)
           env)))))
 
-
-;función que busca un símbolo en un ambiente
+; aply-env: <list-of symbols> <list-of numbers> enviroment -> enviroment
+; - función que busca un símbolo en un ambiente
 (define apply-env
   (lambda (env sym)
     (deref (apply-env-ref env sym))))
 
+; apply-env-ref: <list-of symbols> <list-of numbers> enviroment -> enviroment
+; - función que busca un símbolo en un ambiente
 (define apply-env-ref
   (lambda (env sym)
     (cases environment env
@@ -1383,9 +1391,13 @@
                              (if (number? pos)
                                  (a-ref pos vals)
                                  (apply-env-ref env sym)))))))
-
 ;****************************************************************************************
+
+
+
 ;; 11. Funciones_Para_Asignación_De_Variables
+;****************************************************************************************
+
 ;iota: number -> list
 ;función que retorna una lista de los números desde 0 hasta end
 
@@ -1400,10 +1412,14 @@
       (if (>= next end) '()
           (cons next (loop (+ 1 next)))))))
 
+; reference: <list-of symbols> <list-of numbers> enviroment -> enviroment
+; - función que busca un símbolo en un ambiente y devuelve una referencia
 (define-datatype reference reference?
   (a-ref (position integer?)
          (vec vector?)))
 
+; deref: reference -> value
+; - desreferencia una referencia y obtiene su valor
 (define deref
   (lambda (ref)
     (cases target (primitive-deref ref)
@@ -1415,12 +1431,16 @@
                                           (eopl:error 'deref
                                                       "Illegal reference: ~s" ref1)))))))
 
+; primitive-deref: reference -> value
+; - primitiva que obtiene el valor de una referencia
 (define primitive-deref
   (lambda (ref)
     (cases reference ref
       (a-ref (pos vec)
              (vector-ref vec pos)))))
 
+; setref!: reference value -> void
+; - asigna un nuevo valor a una referencia
 (define setref!
   (lambda (ref expval)
     (let
@@ -1430,23 +1450,31 @@
       (primitive-setref! ref (direct-target expval)))))
 
 
+; primitive-setref!: reference value -> void
+; - primitiva que asigna un nuevo valor a una referencia
 (define primitive-setref!
   (lambda (ref val)
     (cases reference ref
       (a-ref (pos vec)
              (vector-set! vec pos val)))))
-
 ;****************************************************************************************
+
+
+
 ;; 12. Funciones_Auxiliares_Para_Encontrar_La_Posición_De_Un_Símbolo
-; en la lista de símbolos de un ambiente
+;****************************************************************************************
+
+; rib-find-position: busca en la lista de símbolos de un ambiente
 (define rib-find-position
   (lambda (sym los)
     (list-find-position sym los)))
 
+; list-find-position: busca un símbolo en una lista de símbolos y devuelve su posición
 (define list-find-position
   (lambda (sym los)
     (list-index (lambda (sym1) (eqv? sym1 sym)) los)))
 
+; list-index: busca un símbolo en una lista y devuelve su posición
 (define list-index
   (lambda (pred ls)
     (cond
@@ -1458,7 +1486,12 @@
                   #f))))))
 
 ;****************************************************************************************
+
+
+
 ;; 13. Funciones_Auxiliares_Para_Hexadecimales
+;****************************************************************************************
+
 ;; Convierte una lista de dígitos hexadecimales (enteros 0–15) a un número decimal
 (define (hex-list->decimal digits)
   (let loop ([acc 0] [lst digits])
@@ -1474,6 +1507,7 @@
         (cons num acc)
         (loop (quotient num 16)
               (cons (remainder num 16) acc)))))
+;****************************************************************************************
 
 ;*****************************************************************************************
 ;; 14. Funciones_Auxiliares_Para_Paso_Por_Referencia
