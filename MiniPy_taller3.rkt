@@ -200,7 +200,7 @@
     (primitive ("<=") less-equal-prim)
     (primitive (">=") greater-equal-prim)
     (primitive ("==") equal-prim)
-    (primitive ("<>") not-equal-prim)
+    (primitive ("=!") not-equal-prim)
 
     ;; Primitivas hexadecimales
     (primitive ("hex+") add-hex-prim)
@@ -235,7 +235,7 @@
 
     ;; Primitivas registros
     (primitive ("crear-registro") create-param-record-prim)
-    (primitive ("crear-registro-veloz") create-param-record-fast-prim)
+    ; (primitive ("crear-registro-veloz") create-param-record-fast-prim)
     (primitive ("registro?") is-record-prim )
     (primitive ("ref-registro") index-record-prim )
     (primitive ("set-registro") set-record-prim )
@@ -319,7 +319,7 @@
   (lambda (exp env)
     (cases expression exp
       (hex-exp (d1 ds)
-              (list "x16" (cons d1 ds)))
+               (hex-val (cons d1 ds)))
       (lit-exp (datum) datum)
       (string-exp (datum) (substring datum 1 (- (string-length datum) 1))) ; elimina las comillas
       (var-exp (id) (apply-env env id))
@@ -327,14 +327,21 @@
       (primapp-exp (prim rands)
                    (cases primitive prim
                      ;; 1) Si es set-list, pasamos rands sin evaluar
-                     (set-list-prim ()
-                                    (apply-primitive prim rands env))
-                     (append-list-prim ()
-                                       (apply-primitive prim rands env))
+                     (set-list-prim                ()
+                                                   (apply-primitive prim rands env))
+                     (append-list-prim             ()
+                                                   (apply-primitive prim rands env))
+                     ;; 1.b) Igual para las primitivas de registro
+                     (set-record-prim              ()
+                                                   (apply-primitive prim rands env))
+                     (create-param-record-prim     ()
+                                                   (apply-primitive prim rands env))
+                    ;  (create-param-record-fast-prim()
+                    ;                                (apply-primitive prim rands env))
                      ;; 2) En los demás casos, evaluamos los rands antes
                      (else
                       (let ((args (eval-primapp-exp-rands rands env)))
-                        (apply-primitive prim args env)))) )
+                        (apply-primitive prim args env)))))
       (if-exp (test-exp true-exp false-exp)
               (if (true-value? (eval-expression test-exp env))
                   (eval-expression true-exp env)
@@ -343,11 +350,16 @@
               (closure ids body env))
       (app-exp (rator rands)
                (let* ((proc     (eval-expression rator env))
-                      ;; args iniciales sin ref
+                      ;; args iniciales envueltos en targets
                       (raw-args (eval-rands       rands env))
-                      ;; lista de booleans
-                      (flags    (es-lista?       raw-args)))
-                 ;; si no hay flags, comportamiento original
+                      ;; flags = #t para cada arg que sea lista o registro
+                      (flags
+                       (map (lambda (t)
+                              (let ((v (deref-target t)))
+                                (or (lista? v)
+                                    (registro? v))))
+                            raw-args)))
+                 ;; si no hay flags (lista vacía), comportamiento original
                  (if (null? flags)
                      (if (procval? proc)
                          (apply-procval proc raw-args)
@@ -370,7 +382,6 @@
                              val
                              ;; aún quedan flags: seguimos iterando
                              (loop (cdr fs))))))))
-      
       (letrec-exp (proc-names idss bodies letrec-body)
               (eval-expression letrec-body
                   (extend-env-recursively proc-names idss bodies env)))
@@ -433,31 +444,7 @@
 
       ; Expresiones de control
       (for-exp (iter struct body)
-               (let ((estructura (eval-expression struct env)))
-                 (cond
-                   ;; Caso 1: Lista o tupla con exactamente 3 elementos numéricos (inicio, fin, paso)
-                   [(and (or (lista? estructura) (tupla? estructura))
-                         (= (length (get-li estructura)) 3)
-                         (let ((elementos (get-li estructura)))
-                           (and (number? (car elementos))
-                                (number? (cadr elementos))
-                                (number? (caddr elementos)))))
-                    (let* ((elementos (get-li estructura))
-                           (inicio (car elementos))
-                           (fin (cadr elementos))
-                           (paso (caddr elementos)))
-                      (let loop ((i inicio)
-                                 (last-val 1))
-                        (if (if (> paso 0)
-                                (> i fin)    ;; Condición para paso positivo
-                                (< i fin))   ;; Condición para paso negativo
-                            last-val
-                            (let ((nuevo-env (extend-env (list iter) (list i) env)))
-                              (loop (+ i paso) (eval-expression body nuevo-env))))))]
-
-                   ;; Caso 2: Estructura iterable normal (comportamiento original)
-                   [(or (< (length (get-li estructura)) 3)
-                        (> (length (get-li estructura)) 3))
+               (let ((estructura (eval-expression struct env)))                                
                     (let ((elements (get-li estructura)))
                       (let loop ((items elements)
                                  (last-val 1))
@@ -469,7 +456,7 @@
                                                 (list iter)
                                                 (list (if (pair? item) (cdr item) item))
                                                 env)))
-                                (loop rest (eval-expression body nuevo-env)))))))])))
+                                (loop rest (eval-expression body nuevo-env)))))))))
       (while-exp (test body)
                  (let loop ((test-exp (eval-expression test env))
                             (body-exp (eval-expression body env)))
@@ -488,12 +475,14 @@
                    (tuplita vals))
                  )
       (record-exp (key value keys values)
-                  (let ((all-pairs (map (lambda (k v)
-                                          (cons (symbol->string k) (eval-expression v env)))
-                                        (cons key keys)
-                                        (cons value values))))
-                    (registrico all-pairs))
-                  )
+                  (let* ([ks    (cons key  keys)]          ; tus identificadores de campo
+                         [targs (eval-rands (cons value values) env)]) ; ya vienen como targets
+                    (registrico
+                     (map (lambda (k tgt)
+                            (list (symbol->string k) tgt))
+                          ks targs))))
+
+
       )))
 
 
@@ -581,36 +570,113 @@
 
       ;; Primitivas booleanas
       (less-prim ()
-              (if (null? args) (eopl:error 'less-prim "No arguments provided")
-                  (let loop ((acc (car args)) (rest (cdr args)))
-                      (if (null? rest) acc
-                          (loop (< acc (car rest)) (cdr rest))))))
+                 (if (null? args)
+                     (eopl:error 'less-prim "No arguments provided")
+                     (let loop ([prev
+                                 (let ([x (car args)])
+                                   (if (hexadecimal? x)
+                                       (hex-list->decimal (get-hex-digits x))
+                                       x))]
+                                [rs (cdr args)])
+                       (if (null? rs)
+                           #t
+                           (let* ([y (car rs)]
+                                  [yn (if (hexadecimal? y)
+                                          (hex-list->decimal (get-hex-digits y))
+                                          y)])
+                             (if (< prev yn)
+                                 (loop yn (cdr rs))
+                                 #f))))))
       (greater-prim ()
-              (if (null? args) (eopl:error 'greater-prim "No arguments provided")
-                  (let loop ((acc (car args)) (rest (cdr args)))
-                      (if (null? rest) acc
-                          (loop (> acc (car rest)) (cdr rest))))))
+                    (if (null? args)
+                        (eopl:error 'greater-prim "No arguments provided")
+                        (let loop ([prev
+                                    (let ([x (car args)])
+                                      (if (hexadecimal? x)
+                                          (hex-list->decimal (get-hex-digits x))
+                                          x))]
+                                   [rs (cdr args)])
+                          (if (null? rs)
+                              #t
+                              (let* ([y (car rs)]
+                                     [yn (if (hexadecimal? y)
+                                             (hex-list->decimal (get-hex-digits y))
+                                             y)])
+                                (if (> prev yn)
+                                    (loop yn (cdr rs))
+                                    #f))))))
       (less-equal-prim ()
-              (if (null? args) (eopl:error 'less-equal-prim "No arguments provided")
-                  (let loop ((acc (car args)) (rest (cdr args)))
-                      (if (null? rest) acc
-                          (loop (<= acc (car rest)) (cdr rest))))))
+                       (if (null? args)
+                           (eopl:error 'less-equal-prim "No arguments provided")
+                           (let loop ([prev
+                                       (let ([x (car args)])
+                                         (if (hexadecimal? x)
+                                             (hex-list->decimal (get-hex-digits x))
+                                             x))]
+                                      [rs (cdr args)])
+                             (if (null? rs)
+                                 #t
+                                 (let* ([y (car rs)]
+                                        [yn (if (hexadecimal? y)
+                                                (hex-list->decimal (get-hex-digits y))
+                                                y)])
+                                   (if (<= prev yn)
+                                       (loop yn (cdr rs))
+                                       #f))))))
       (greater-equal-prim ()
-              (if (null? args) (eopl:error 'greater-equal-prim "No arguments provided")
-                  (let loop ((acc (car args)) (rest (cdr args)))
-                      (if (null? rest) acc
-                          (loop (>= acc (car rest)) (cdr rest))))))
+                          (if (null? args)
+                              (eopl:error 'greater-equal-prim "No arguments provided")
+                              (let loop ([prev
+                                          (let ([x (car args)])
+                                            (if (hexadecimal? x)
+                                                (hex-list->decimal (get-hex-digits x))
+                                                x))]
+                                         [rs (cdr args)])
+                                (if (null? rs)
+                                    #t
+                                    (let* ([y (car rs)]
+                                           [yn (if (hexadecimal? y)
+                                                   (hex-list->decimal (get-hex-digits y))
+                                                   y)])
+                                      (if (>= prev yn)
+                                          (loop yn (cdr rs))
+                                          #f))))))
       (equal-prim ()
-              (if (null? args) (eopl:error 'equal-prim "No arguments provided")
-                  (let loop ((acc (car args)) (rest (cdr args)))
-                      (if (null? rest) acc
-                          (loop (= acc (car rest)) (cdr rest))))))
-      (not-equal-prim ()
-              (if (null? args) (eopl:error 'not-equal-prim "No arguments provided")
-                  (let loop ((acc (car args)) (rest (cdr args)))
-                      (if (null? rest) acc
-                          (loop (not (= acc (car rest))) (cdr rest))))))
+                  (if (null? args)
+                      (eopl:error 'equal-prim "No arguments provided")
+                      (let* ([x0 (car args)]
+                             [base (if (hexadecimal? x0)
+                                       (hex-list->decimal (get-hex-digits x0))
+                                       x0)])
+                        (let loop ([rs (cdr args)])
+                          (if (null? rs)
+                              #t
+                              (let* ([y (car rs)]
+                                    [yn (if (hexadecimal? y)
+                                            (hex-list->decimal (get-hex-digits y))
+                                            y)])
+                                (if (= base yn)
+                                    (loop (cdr rs))
+                                    #f)))))))
 
+      (not-equal-prim ()
+                      (if (null? args)
+                          (eopl:error 'not-equal-prim "No arguments provided")
+                          (let* ([x0 (car args)]
+                                 [base (if (hexadecimal? x0)
+                                           (hex-list->decimal (get-hex-digits x0))
+                                           x0)])
+                            (let loop ([rs (cdr args)])
+                              (cond
+                                [(null? rs)     #f]
+                                [else
+                                 (let* ([y  (car rs)]
+                                       [yn (if (hexadecimal? y)
+                                               (hex-list->decimal (get-hex-digits y))
+                                               y)])
+                                   (if (not (= base yn))
+                                       #t
+                                       (loop (cdr rs))))])))))
       ;; Primitivas de listas
       (empty-list-prim ()                    
               (let ((val (get-li (car args))))
@@ -749,30 +815,75 @@
                   (if (registro? val)
                       #t
                       #f)))
-      (create-param-record-fast-prim ()
-              (repetir (list (car args) (cadr args)) (caddr args) 'registro))
+      ; (create-param-record-fast-prim ()
+      ;         (repetir (list (car args) (cadr args)) (caddr args) 'registro))
       (create-param-record-prim ()
-              (let ((keys (get-li (car args)))    
-                  (values (get-li (cadr args)))) 
-              (if (not (= (length keys) (length values)))
-                  (eopl:error 'create-param-record-prim "Number of keys and values must match")
-                  (let ((all-pairs 
-                      (map 
-                          (lambda (k v)
-                              (cons (symbol->string k) v))
-                          keys values)))
-                      (registrico all-pairs)))))
+                                (let* ([keys-val (eval-expression (car args) env)]
+                                       [vals-val (eval-expression (cadr args) env)]
+                                       [keys     (get-li keys-val)]
+                                       [vals     (get-li vals-val)])
+                                  (unless (= (length keys) (length vals))
+                                    (eopl:error 'create-param-record-prim
+                                                "Number of keys and values must match"))
+                                  (registrico
+                                   (map (lambda (k-target v-target)
+                                          (let ([rk (deref-target k-target)])
+                                            (cond
+                                              [(symbol? rk) (list (symbol->string rk) v-target)]
+                                              [(string? rk) (list rk                   v-target)]
+                                              [else (eopl:error 'create-param-record-prim
+                                                                "Record key must be symbol or string, got: ~s"
+                                                                rk)])))
+                                        keys vals))))
       (index-record-prim ()
               (if (and (registro? (car args)) (symbol? (cadr args))) 
                   (record-pos (get-li (car args)) (cadr args))
                   (eopl:error 'empty-or-wrong-prim "Not a record or not a key")))
-      (set-record-prim () 
-              (let ((reg (car args)) 
-                  (key (cadr args)) 
-                  (val (caddr args)))
-                  (if (and (registro? reg) (symbol? key))
-                      (insertar-en-posicion reg key val)
-                      (eopl:error 'empty-or-wrong-prim "Not a record or not a key"))))
+      (set-record-prim ()
+                       (let* ((raw-rec (car args))
+                              (raw-key (cadr args))
+                              (raw-val (caddr args))
+                              (rec-ref (apply-env-ref env (obtener-id raw-rec)))
+                              (is-mutable
+                               (let find-muts ([e env])
+                                 (cases environment e
+                                   (empty-env-record ()
+                                                     (eopl:error 'set-record-prim
+                                                                 "No binding for ~s"
+                                                                 raw-rec))
+                                   (extended-env-record (syms _ muts parent)
+                                                        (let ((i (list-index
+                                                                  (lambda (s) (eq? s (obtener-id raw-rec)))
+                                                                  syms)))
+                                                          (if (number? i)
+                                                              (vector-ref muts i)
+                                                              (find-muts parent))))))))
+                         (unless is-mutable
+                           (eopl:error 'set-record-prim
+                                       "Cannot reassign: ~s is const"
+                                       raw-rec))
+                         (let* ((rec       (deref-target rec-ref))
+                                (pairs     (get-li rec))
+                                (key-lit   (eval-expression raw-key env))
+                                (key-sym   (cond
+                                             [(symbol? key-lit) key-lit]
+                                             [(string? key-lit) (string->symbol key-lit)]
+                                             [else
+                                              (eopl:error 'set-record-prim
+                                                          "Record key must be symbol or string, got: ~s"
+                                                          key-lit)]))
+                                (value-target
+                                 (if (var-exp? raw-val)
+                                     (let* ((ref (apply-env-ref env (obtener-id raw-val)))
+                                            (v   (deref-target (primitive-deref ref))))
+                                       (if (or (lista? v) (registro? v))
+                                           ref
+                                           (direct-target v)))
+                                     (direct-target (eval-expression raw-val env))))
+                                (new-pairs (insertar-en-clave-aux pairs key-sym value-target))
+                                (new-rec   (registrico new-pairs)))
+                           (setref! rec-ref new-rec)
+                           1)))
 
       ;; Primitiva de módulo-.
       (mod-prim () 
@@ -781,52 +892,39 @@
                   (remainder (car args) (cadr args))))
     
       ;; Primitivas hexadecimales
-      (add-hex-prim () ;; hex+ : suma dos hexadecimales
-              (let* ([raw1    (car args)]              
-                  [raw2    (car (cdr args))]        
-                  [ds1     (car (cdr raw1))]        
-                  [ds2     (car (cdr raw2))]        
-                  [n1      (hex-list->decimal ds1)]
-                  [n2      (hex-list->decimal ds2)]
-                  [sum     (+ n1 n2)]
-                  [out-ds  (decimal->hex-list sum)])
-                  (list "x16" out-ds)))
-      (sub-hex-prim () ;; hex- : resta (error si negativo)
-              (let* ([raw1    (car args)]
-                  [raw2    (car (cdr args))]
-                  [ds1     (car (cdr raw1))]
-                  [ds2     (car (cdr raw2))]
-                  [n1      (hex-list->decimal ds1)]
-                  [n2      (hex-list->decimal ds2)]
-                  [diff    (- n1 n2)])
-                  (if (< diff 0)
-                      (eopl:error 'sub-hex-prim "Resultado negativo")
-                      (list "x16" (decimal->hex-list diff)))))
-      (mult-hex-prim () ;; hex* : multiplicación
-              (let* ([raw1    (car args)]
-                  [raw2    (car (cdr args))]
-                  [ds1     (car (cdr raw1))]
-                  [ds2     (car (cdr raw2))]
-                  [n1      (hex-list->decimal ds1)]
-                  [n2      (hex-list->decimal ds2)]
-                  [prod    (* n1 n2)]
-                  [out-ds  (decimal->hex-list prod)])
-                  (list "x16" out-ds)))
-      (incr-hex-prim () ;; hexadd1 : incrementa
-              (let* ([raw     (car args)]             
-                  [ds      (car (cdr raw))]
-                  [n       (hex-list->decimal ds)]
-                  [inc     ( (+ 1 n))]
-                  [out-ds  (decimal->hex-list inc)])
-                  (list "x16" out-ds)))
-      (decr-hex-prim () ;; hexsub1 : decrementa (error si negativo)
-              (let* ([raw     (car args)]
-                  [ds      (car (cdr raw))]
-                  [n       (hex-list->decimal ds)]
-                  [dec     ( (- n 1))])
-                  (if (< dec 0)
-                      (eopl:error 'decr-hex-prim "Resultado negativo")
-                      (list "x16" (decimal->hex-list dec)))))
+      (add-hex-prim ()
+                    (let* ([ds1 (get-hex-digits (car  args))]
+                           [ds2 (get-hex-digits (cadr args))]
+                           [sum ( + (hex-list->decimal ds1)
+                                    (hex-list->decimal ds2)) ])
+                      (hex-val (decimal->hex-list sum))))
+
+      (sub-hex-prim ()
+                    (let* ([ds1 (get-hex-digits (car  args))]
+                           [ds2 (get-hex-digits (cadr args))]
+                           [diff (- (hex-list->decimal ds1)
+                                    (hex-list->decimal ds2))])
+                      (if (< diff 0)
+                          (eopl:error 'sub-hex-prim "Resultado negativo")
+                          (hex-val (decimal->hex-list diff)))))
+      (mult-hex-prim ()
+                     (let* ([ds1  (get-hex-digits (car  args))]
+                            [ds2  (get-hex-digits (cadr args))]
+                            [prod (* (hex-list->decimal ds1)
+                                     (hex-list->decimal ds2))])
+                       (hex-val (decimal->hex-list prod))))
+
+      (incr-hex-prim ()
+                     (let* ([ds  (get-hex-digits (car args))]
+                            [inc (+ 1 (hex-list->decimal ds))])
+                       (hex-val (decimal->hex-list inc))))
+
+      (decr-hex-prim ()
+                     (let* ([ds  (get-hex-digits (car args))]
+                            [dec (- (hex-list->decimal ds) 1)])
+                       (if (< dec 0)
+                           (eopl:error 'decr-hex-prim "Resultado negativo")
+                           (hex-val (decimal->hex-list dec)))))
 
       ;; Primitivas de cadenas
       (string-length-prim ()
@@ -920,20 +1018,24 @@
 ; get-li: función auxiliar para obtener el valor de una lista, tupla o registro
 (define get-li
   (lambda (li)
-    (cond
-      [(lista? li)
-       (cases lista li
-         (listica (l) l))]
-
-      [(tupla? li)
-       (cases tupla li
-         (tuplita (l) l))]
-      [(registro? li)
-       (cases registro li
-         (registrico (pairs) pairs))]
-
-      [else (eopl:error 'get-li "Not a data struct")]
-      )))
+    (let ((v (cond
+               ((target? li)
+                (deref-target li))
+               ((reference? li)
+                (deref-target (primitive-deref li)))
+               (else
+                li))))
+      (cond
+        ((lista? v)
+         (cases lista v (listica (l) l)))
+        ((tupla? v)
+         (cases tupla v (tuplita (l) l)))
+        ((registro? v)
+         (cases registro v (registrico (pairs) pairs)))
+        (else
+         (eopl:error 'get-li
+                     "Not a data struct, got: ~s"
+                     v))))))
 
 (define last
   (lambda (lst)
@@ -1058,11 +1160,14 @@
 (define insertar-en-clave-aux
   (lambda (lst key val)
     (cond
-      [(null? lst) (eopl:error "empty-record")]
-      [(null? (cdr lst)) (eopl:error "key not found")]
-      [(eq? key (string->symbol (car (car lst)))) 
-      (cons (cons (car (car lst)) val) (cdr lst))]
-      [else (cons (cons (car lst) (cdr lst)) (insertar-en-clave-aux (cdr lst) key val))])))
+      [(null? lst)
+       (eopl:error 'insertar-en-clave-aux "empty-record")]
+      [(eq? key (string->symbol (car (car lst))))
+       (cons (list (car (car lst)) val)
+             (cdr lst))]
+      [else
+       (cons (car lst)
+             (insertar-en-clave-aux (cdr lst) key val))])))
 ;*******************************************************************************************
 
 
@@ -1098,8 +1203,13 @@
   (lambda (g env)
     (cases gate g
       (a-gate (id typ input-list)
-              (let ((val (apply-gate typ (eval-input-list input-list env))))
-                (extend-env (list id) (list val) env))))))
+              (let* ((targs (eval-input-list input-list env))
+                     (vals  (map deref-target targs))         ; puros #t/#f
+                     (out   (apply-gate typ vals)))           ; lógica booleana
+                ;; guardamos de nuevo como target
+                (extend-env (list id)
+                            (list (direct-target out))
+                            env))))))
 
 ; eval-input-list: evalúa una lista de entradas de una compuerta lógica.
 ;   il: input-list (lista de entradas de una compuerta)
@@ -1108,8 +1218,9 @@
   (lambda (il env)
     (cases input-list il
       (empty-input-list () '())
-      (cons-input-list (input rest)
-                       (cons (eval-input input env) (eval-input-list rest env))))))
+      (cons-input-list (inp rest)
+                       (cons (eval-input inp env)
+                             (eval-input-list rest env))))))
 
 ; eval-input: evalúa una entrada individual (referencia o literal booleano).
 ;   inp: input (ref-input o bool-input)
@@ -1117,11 +1228,13 @@
 (define eval-input
   (lambda (inp env)
     (cases input inp
-      (ref-input (id) (apply-env env id))
+      (ref-input (id)
+                 ;; una referencia viva al binding
+                 (indirect-target (apply-env-ref env id)))
       (bool-input (b)
                   (cases bool b
-                    (true-lit () #t)
-                    (false-lit () #f))))))
+                    (true-lit  () (direct-target #t))
+                    (false-lit () (direct-target #f)))))))
 
 ; apply-gate: aplica el comportamiento lógico de una compuerta a una lista de valores booleanos
 ;   t: tipo de compuerta (and-type, or-type, not-type, xor-type)
@@ -1491,7 +1604,10 @@
 
 ;; 13. Funciones_Auxiliares_Para_Hexadecimales
 ;****************************************************************************************
-
+(define get-hex-digits
+  (lambda (hex)
+    (cases hexadecimal hex
+      (hex-val (ds) ds))))
 ;; Convierte una lista de dígitos hexadecimales (enteros 0–15) a un número decimal
 (define (hex-list->decimal digits)
   (let loop ([acc 0] [lst digits])
@@ -1525,6 +1641,8 @@
         (boolean? x)
         (circuit? x)
         (tupla? x)
+        (hexadecimal? x)
+        (string? x)
         (registro? x)
         (lista? x)
         (procval? x)))) ;
@@ -1550,6 +1668,7 @@
                      (lista? val))
       (indirect-target (ref)
                        (es-lista-element? (primitive-deref ref))))))
+
 ;; ———————————————————————————————————————————————
 ;; Función principal: lista de targets -> lista de booleans
 ;; ———————————————————————————————————————————————
@@ -1593,6 +1712,8 @@
          (cases expression exp
            (var-exp (id)          #t)
            (_                    #f)))))
+(define-datatype hexadecimal hexadecimal?
+  (hex-val (digits (list-of integer?))))
 
 ;; ———————————————————————————————————————————————
 ;; Helper para deshacer cualquier target a su valor “crudo”
@@ -1629,6 +1750,15 @@
                (display " ")
                (loop (cdr cells)))))
          (display "]"))]
+      [(hexadecimal? v)
+       (display "x16(")
+       (let loop ((ds (get-hex-digits v)))
+         (when (pair? ds)
+           (display (car ds))
+           (when (cdr ds) (display " "))
+           (loop (cdr ds))))
+       (display ")")]
+
       [else
        (display v)])))
 
