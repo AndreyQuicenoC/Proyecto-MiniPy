@@ -280,7 +280,7 @@
   (tuplita (l (list-of scheme-value?))))
 
 (define-datatype registro registro?
-  (registrico (pairs (list-of pair?))))
+  (registrico (pairs (list-of pair?)))) ;; Pares 
 
 ;Construidos automáticamente:
 (sllgen:make-define-datatypes the-lexical-spec the-grammar)
@@ -607,6 +607,10 @@
        )
 
       (append-list-prim ()
+
+                        
+
+                        
                         (putf (car args) (cadr args))
                         )
 
