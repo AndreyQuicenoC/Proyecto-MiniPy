@@ -201,11 +201,16 @@
     (primitive (">=") greater-equal-prim)
     (primitive ("==") equal-prim)
     (primitive ("=!") not-equal-prim)
+    (primitive ("&&") and-prim)
+    (primitive ("||")  or-prim)
+    (primitive ("!") not-prim)
 
     ;; Primitivas hexadecimales
     (primitive ("hex+") add-hex-prim)
     (primitive ("hex-") sub-hex-prim)
     (primitive ("hex*") mult-hex-prim)
+    (primitive ("hex/") div-hex-prim)  
+    (primitive ("hexmod") mod-hex-prim)  
     (primitive ("hexadd1") incr-hex-prim)
     (primitive ("hexsub1") decr-hex-prim)
     ;; Primitivas de cadenas
@@ -458,14 +463,10 @@
                                                 env)))
                                 (loop rest (eval-expression body nuevo-env)))))))))
       (while-exp (test body)
-                 (let loop ((test-exp (eval-expression test env))
-                            (body-exp (eval-expression body env)))
-                   (if (true-value? test-exp)
-                       (let ((new-test (eval-expression test env)))
-                         (if (true-value? new-test)
-                             (loop new-test body-exp)
-                             body-exp))
-                       body-exp)))
+                 (let loop ((last-val 1))
+                   (if (true-value? (eval-expression test env))
+                       (loop (eval-expression body env))
+                       last-val)))
       (list-exp (elements)
                 (let ((vals (eval-rands elements env)))
                   (listica vals))
@@ -520,9 +521,16 @@
        (direct-target (eval-expression rand env))))))
 
 
+;; Helper: si recibe un target, lo dereferencia; si no, lo deja igual
+(define unwrap-target
+  (lambda (x)
+    (if (target? x) (deref-target x) x)))
+
 (define eval-primapp-exp-rands
   (lambda (rands env)
-    (map (lambda (x) (eval-expression x env)) rands)))
+    (map (lambda (expr)
+           (unwrap-target (eval-expression expr env)))
+         rands)))
 
 (define eval-let-exp-rands
   (lambda (rands env)
@@ -567,116 +575,98 @@
       (decr-prim ()
               (if (null? args) (eopl:error 'decr-prim "No argument provided")
                   (- (car args) 1)))
-
+      ;; Primitiva de módulo-.
+      (mod-prim ()
+                (let* ([a (car args)]
+                       [b (cadr args)])
+                  (when (= b 0)
+                    (eopl:error 'mod-prim "Division by zero"))
+                  ;; módulo uniforme para enteros y reales:
+                  (let ([q (floor (/ a b))])
+                    (- a (* b q)))))
       ;; Primitivas booleanas
       (less-prim ()
                  (if (null? args)
                      (eopl:error 'less-prim "No arguments provided")
-                     (let loop ([prev
-                                 (let ([x (car args)])
-                                   (if (hexadecimal? x)
-                                       (hex-list->decimal (get-hex-digits x))
-                                       x))]
-                                [rs (cdr args)])
+                     (let loop ([prev (num-of (car args))] [rs (cdr args)])
                        (if (null? rs)
                            #t
-                           (let* ([y (car rs)]
-                                  [yn (if (hexadecimal? y)
-                                          (hex-list->decimal (get-hex-digits y))
-                                          y)])
-                             (if (< prev yn)
-                                 (loop yn (cdr rs))
+                           (let ([cur (num-of (car rs))])
+                             (if (< prev cur)
+                                 (loop cur (cdr rs))
                                  #f))))))
+
       (greater-prim ()
                     (if (null? args)
                         (eopl:error 'greater-prim "No arguments provided")
-                        (let loop ([prev
-                                    (let ([x (car args)])
-                                      (if (hexadecimal? x)
-                                          (hex-list->decimal (get-hex-digits x))
-                                          x))]
-                                   [rs (cdr args)])
+                        (let loop ([prev (num-of (car args))] [rs (cdr args)])
                           (if (null? rs)
                               #t
-                              (let* ([y (car rs)]
-                                     [yn (if (hexadecimal? y)
-                                             (hex-list->decimal (get-hex-digits y))
-                                             y)])
-                                (if (> prev yn)
-                                    (loop yn (cdr rs))
+                              (let ([cur (num-of (car rs))])
+                                (if (> prev cur)
+                                    (loop cur (cdr rs))
                                     #f))))))
+
       (less-equal-prim ()
                        (if (null? args)
                            (eopl:error 'less-equal-prim "No arguments provided")
-                           (let loop ([prev
-                                       (let ([x (car args)])
-                                         (if (hexadecimal? x)
-                                             (hex-list->decimal (get-hex-digits x))
-                                             x))]
-                                      [rs (cdr args)])
+                           (let loop ([prev (num-of (car args))] [rs (cdr args)])
                              (if (null? rs)
                                  #t
-                                 (let* ([y (car rs)]
-                                        [yn (if (hexadecimal? y)
-                                                (hex-list->decimal (get-hex-digits y))
-                                                y)])
-                                   (if (<= prev yn)
-                                       (loop yn (cdr rs))
+                                 (let ([cur (num-of (car rs))])
+                                   (if (<= prev cur)
+                                       (loop cur (cdr rs))
                                        #f))))))
+
       (greater-equal-prim ()
                           (if (null? args)
                               (eopl:error 'greater-equal-prim "No arguments provided")
-                              (let loop ([prev
-                                          (let ([x (car args)])
-                                            (if (hexadecimal? x)
-                                                (hex-list->decimal (get-hex-digits x))
-                                                x))]
-                                         [rs (cdr args)])
+                              (let loop ([prev (num-of (car args))] [rs (cdr args)])
                                 (if (null? rs)
                                     #t
-                                    (let* ([y (car rs)]
-                                           [yn (if (hexadecimal? y)
-                                                   (hex-list->decimal (get-hex-digits y))
-                                                   y)])
-                                      (if (>= prev yn)
-                                          (loop yn (cdr rs))
+                                    (let ([cur (num-of (car rs))])
+                                      (if (>= prev cur)
+                                          (loop cur (cdr rs))
                                           #f))))))
+
       (equal-prim ()
                   (if (null? args)
                       (eopl:error 'equal-prim "No arguments provided")
-                      (let* ([x0 (car args)]
-                             [base (if (hexadecimal? x0)
-                                       (hex-list->decimal (get-hex-digits x0))
-                                       x0)])
+                      (let ([base (num-of (car args))])
                         (let loop ([rs (cdr args)])
                           (if (null? rs)
                               #t
-                              (let* ([y (car rs)]
-                                    [yn (if (hexadecimal? y)
-                                            (hex-list->decimal (get-hex-digits y))
-                                            y)])
-                                (if (= base yn)
-                                    (loop (cdr rs))
-                                    #f)))))))
+                              (if (= base (num-of (car rs)))
+                                  (loop (cdr rs))
+                                  #f))))))
 
       (not-equal-prim ()
                       (if (null? args)
                           (eopl:error 'not-equal-prim "No arguments provided")
-                          (let* ([x0 (car args)]
-                                 [base (if (hexadecimal? x0)
-                                           (hex-list->decimal (get-hex-digits x0))
-                                           x0)])
+                          (let ([base (num-of (car args))])
                             (let loop ([rs (cdr args)])
                               (cond
                                 [(null? rs)     #f]
-                                [else
-                                 (let* ([y  (car rs)]
-                                       [yn (if (hexadecimal? y)
-                                               (hex-list->decimal (get-hex-digits y))
-                                               y)])
-                                   (if (not (= base yn))
-                                       #t
-                                       (loop (cdr rs))))])))))
+                                [(not (= base (num-of (car rs)))) #t]
+                                [else           (loop (cdr rs))])))))
+      (and-prim ()
+                (if (< (length args) 2) (eopl:error 'and-prim "Need at least two args")
+                    (let loop ((v (deref-target (car args))) (rest (cdr args)))
+                      (cond [(eq? v #f) #f]
+                            [(null? rest)   #t]
+                            [else (loop (deref-target (car rest)) (cdr rest))]))))
+
+      (or-prim ()
+               (if (< (length args) 2) (eopl:error 'or-prim "Need at least two args")
+                   (let loop ((v (deref-target (car args))) (rest (cdr args)))
+                     (cond [(eq? v #t) #t]
+                           [(null? rest)   #f]
+                           [else (loop (deref-target (car rest)) (cdr rest))]))))
+
+      (not-prim ()
+                (if (not (= (length args) 1)) (eopl:error 'not-prim "Need exactly one arg")
+                    (let ((v (deref-target (car args))))
+                      (if (eq? v #t) #f #t))))
       ;; Primitivas de listas
       (empty-list-prim ()                    
               (let ((val (get-li (car args))))
@@ -796,7 +786,7 @@
                          (v       (deref-target raw-tgt)))
                     (print-value v)
                     (newline)
-                    raw-tgt))
+                    1))
       ;; Tuplas
       (create-param-tuple-prim ()
               (repetir (car args) (cadr args) 'tupla))
@@ -829,11 +819,16 @@
                                    (map (lambda (k-target v-target)
                                           (let ([rk (deref-target k-target)])
                                             (cond
-                                              [(symbol? rk) (list (symbol->string rk) v-target)]
-                                              [(string? rk) (list rk                   v-target)]
-                                              [else (eopl:error 'create-param-record-prim
-                                                                "Record key must be symbol or string, got: ~s"
-                                                                rk)])))
+                                              [(symbol? rk)
+                                               (list (symbol->string rk) v-target)]
+                                              [(string? rk)
+                                               (list rk                   v-target)]
+                                              [(number? rk)
+                                               (list (number->string rk)  v-target)]
+                                              [else
+                                               (eopl:error 'create-param-record-prim
+                                                           "Record key must be symbol, string or number, got: ~s"
+                                                           rk)])))
                                         keys vals))))
       (index-record-prim ()
               (if (and (registro? (car args)) (symbol? (cadr args))) 
@@ -884,13 +879,6 @@
                                 (new-rec   (registrico new-pairs)))
                            (setref! rec-ref new-rec)
                            1)))
-
-      ;; Primitiva de módulo-.
-      (mod-prim () 
-              (if (= (cadr args) 0)
-                  (eopl:error 'apply-primitive "Division by zero")
-                  (remainder (car args) (cadr args))))
-    
       ;; Primitivas hexadecimales
       (add-hex-prim ()
                     (let* ([ds1 (get-hex-digits (car  args))]
@@ -925,14 +913,28 @@
                        (if (< dec 0)
                            (eopl:error 'decr-hex-prim "Resultado negativo")
                            (hex-val (decimal->hex-list dec)))))
-
+      (div-hex-prim ()
+        (let* ([ds1 (get-hex-digits (car args))]
+               [ds2 (get-hex-digits (cadr args))]
+               [n1  (hex-list->decimal ds1)]
+               [n2  (hex-list->decimal ds2)])
+          (if (= n2 0)
+              (eopl:error 'div-hex-prim "Division by zero")
+              (hex-val (decimal->hex-list (quotient n1 n2))))))
+      (mod-hex-prim ()
+        (let* ([ds1 (get-hex-digits (car args))]
+               [ds2 (get-hex-digits (cadr args))]
+               [n1  (hex-list->decimal ds1)]
+               [n2  (hex-list->decimal ds2)])
+          (if (= n2 0)
+              (eopl:error 'mod-hex-prim "Division by zero")
+              (hex-val (decimal->hex-list (remainder n1 n2))))))
       ;; Primitivas de cadenas
       (string-length-prim ()
-              (let* ([s (car args)]             ; el string real, sin comillas
-                  [n (string-length s)])
-                  (if (> n 1)
-                      (bool-exp (true-lit))      ; construye el AST “True”
-                      (bool-exp (false-lit)))))  ; o el AST “False”
+                          (if (null? args)
+                              (eopl:error 'string-length-prim "No argument provided")
+                              (string-length (car args))))
+
       (string-append-prim ()
                           (apply string-append args))
       ;; Primitiva: eval-circuit(circuito, entrada)
@@ -1169,7 +1171,13 @@
        (cons (car lst)
              (insertar-en-clave-aux (cdr lst) key val))])))
 ;*******************************************************************************************
-
+(define (num-of v)
+  (cond
+    [(boolean? v)        (if v 1 0)]
+    [(hexadecimal? v)    (hex-list->decimal (get-hex-digits v))]
+    [(number? v)         v]
+    [else                (eopl:error 'num-of
+                                     "Expected boolean, number or hex, got: ~s" v)]))
 
 
 ;; 5. Evaluación_De_Circuitos
@@ -1750,6 +1758,7 @@
                (display " ")
                (loop (cdr cells)))))
          (display "]"))]
+
       [(hexadecimal? v)
        (display "x16(")
        (let loop ((ds (get-hex-digits v)))
@@ -1759,8 +1768,28 @@
            (loop (cdr ds))))
        (display ")")]
 
+      [(registro? v)
+       (let ((pairs (get-li v)))
+         (display "{")
+         (let loop ((ps pairs))
+           (when (pair? ps)
+             (let* ((pair (car ps))
+                    (key  (car pair))
+                    (tgt  (cadr pair))
+                    (val  (deref-target tgt)))
+               (display  key)
+               (display " : ")
+               (print-value val))
+             (when (cdr ps)
+               (display ", ")
+               (loop (cdr ps)))))
+         (display "}"))]
+
       [else
        (display v)])))
+
+
+
 
 
 (interpretador)
