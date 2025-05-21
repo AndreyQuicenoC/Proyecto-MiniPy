@@ -718,13 +718,27 @@
       (equal-prim ()
                   (if (null? args)
                       (eopl:error 'equal-prim "No arguments provided")
-                      (let ([base (num-of (car args))])
-                        (let loop ([rs (cdr args)])
-                          (if (null? rs)
-                              #t
-                              (if (= base (num-of (car rs)))
-                                  (loop (cdr rs))
-                                  #f))))))
+                      (let ([x0 (car args)])
+                        (cond
+                          ;; caso string
+                          [(string? x0)
+                           (let loop ([rs (cdr args)])
+                             (if (null? rs)
+                                 #t
+                                 (let ([y (car rs)])
+                                   (if (and (string? y)
+                                            (string=? x0 y))
+                                       (loop (cdr rs))
+                                       #f))))]
+                          ;; caso numérico/boolean/hex
+                          [else
+                           (let ([base (num-of x0)])
+                             (let loop ([rs (cdr args)])
+                               (if (null? rs)
+                                   #t
+                                   (if (= base (num-of (car rs)))
+                                       (loop (cdr rs))
+                                       #f))))]))))
 
       (not-equal-prim ()
                       (if (null? args)
@@ -872,7 +886,7 @@
                          (v       (deref-target raw-tgt)))
                     (print-value v)
                     (newline)
-                    raw-tgt))
+                    1))
       ;; Tuplas
       (create-param-tuple-prim ()
               (repetir (car args) (cadr args) 'tupla))
@@ -2005,6 +2019,17 @@
                (display " ")
                (loop (cdr cells)))))
          (display "]"))]
+         
+      [(tupla? v)
+       (let ((elems (get-li v)))
+         (display "(")
+         (let loop ((cells elems))
+           (when (pair? cells)
+             (print-value (deref-target (car cells)))
+             (when (cdr cells)
+               (display " ")
+               (loop (cdr cells)))))
+         (display ")"))]
 
       [(hexadecimal? v)
        (display "x16(")
