@@ -124,7 +124,8 @@
      string)
     (quote-token ("'") symbol) ; reconoce el carácter de comilla simple (') y lo trata como un símbolo
     (identifier
-     (letter (arbno (or letter digit "?"))) symbol)
+     (letter (arbno (or letter digit "_" "-" "?")))
+     symbol)
     (number
      (digit (arbno digit) "." digit (arbno digit))
      number)
@@ -1648,15 +1649,7 @@
 ; - desreferencia una referencia y obtiene su valor
 (define deref
   (lambda (ref)
-    (cases target (primitive-deref ref)
-      (direct-target (expval) expval)
-      (indirect-target (ref1)
-                       (cases target (primitive-deref ref1)
-                         (direct-target (expval) expval)
-                         (indirect-target (p)
-                                          (eopl:error 'deref
-                                                      "Illegal reference: ~s" ref1)))))))
-
+    (deref-target (primitive-deref ref))))
 ; primitive-deref: reference -> value
 ; - primitiva que obtiene el valor de una referencia
 (define primitive-deref
@@ -1695,16 +1688,28 @@
 
 ;; 12. Funciones_Auxiliares_Para_Encontrar_La_Posición_De_Un_Símbolo
 ;****************************************************************************************
-
-; rib-find-position: busca en la lista de símbolos de un ambiente
 (define rib-find-position
-  (lambda (sym los)
-    (list-find-position sym los)))
+  (lambda (name symbols)
+    (list-find-last-position name symbols)))
 
-; list-find-position: busca un símbolo en una lista de símbolos y devuelve su posición
-(define list-find-position
+(define list-find-last-position
   (lambda (sym los)
-    (list-index (lambda (sym1) (eqv? sym1 sym)) los)))
+    (let loop
+      ((los los) (curpos 0) (lastpos #f))
+      (cond
+        ((null? los) lastpos)
+        ((eqv? sym (car los))
+         (loop (cdr los) (+ curpos 1) curpos))
+        (else (loop (cdr los) (+ curpos 1) lastpos))))))
+; ; rib-find-position: busca en la lista de símbolos de un ambiente
+; (define rib-find-position
+;   (lambda (sym los)
+;     (list-find-position sym los)))
+
+; ; list-find-position: busca un símbolo en una lista de símbolos y devuelve su posición
+; (define list-find-position
+;   (lambda (sym los)
+;     (list-index (lambda (sym1) (eqv? sym1 sym)) los)))
 
 ; list-index: busca un símbolo en una lista y devuelve su posición
 (define list-index
@@ -1760,6 +1765,7 @@
         (boolean? x)
         (circuit? x)
         (tupla? x)
+        (object? x)
         (hexadecimal? x)
         (string? x)
         (registro? x)
@@ -1951,9 +1957,10 @@
 
 (define new-object
   (lambda (class-name)
-    (an-object
-      class-name
-      (make-vector (class-name->field-length class-name))))) ;\new1
+    (let* ([len    (class-name->field-length class-name)]
+           [fields (make-vector len (direct-target 0))])
+      (an-object class-name fields))))
+
 
 ;^;;;;;;;;;;;;;;; methods ;;;;;;;;;;;;;;;;
 
@@ -1987,12 +1994,6 @@
           (cons '%super (cons 'self ids))
           (cons super-name (cons self args))
           (extend-env-refs field-ids fields (empty-env)))))))
-
-#|
-(define rib-find-position
-  (lambda (name symbols)
-    (list-find-last-position name symbols)))
-|#
 
 ;;;;;;;;;;;;;;;; method environments ;;;;;;;;;;;;;;;;
 
