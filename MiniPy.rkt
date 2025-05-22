@@ -35,38 +35,70 @@
 ;;<program>         ::= <expression>
 
 ;; <expression>      ::= <number>
-;;                    | <float>
-;;                    | <hex>
-;;                    | <string>
-;;                    | <bool>
-;;                    | <identifier>
-;;                    | <primitive>(<expression> { , <expression> }*)
-;;                    | if <expr-bool> then <expression> [else <expression>] end
-;;                    | let <identifier> = <expression> { , <identifier> = <expression> } in <expression>
-;;                    | var <identifier> = <expression> { , <identifier> = <expression> } in <expression>
-;;                    | const <identifier> = <expression> { , <identifier> = <expression> } in <expression>
-;;                    | rec <identifier>(<identifier> { , <identifier> }*) = <expression> { ... } in <expression>
-;;                    | proc(<identifier> { , <identifier> }*) <expression>
-;;                    | (<expression> <expression>*)
-;;                    | begin <expression> { ; <expression> }+ end
-;;                    | while <expr-bool> do <expression> done
-;;                    | for <identifier> in <expression> do <expression> done
-;;                    | tuple [ <expression> { ; <expression> } ]
-;;                    | { <identifier> = <expression> { ; <identifier> = <expression> } }
-;;                    | [ <expression> { ; <expression> } ] ; lists
-;;                    | <expr-bool>
-;;                    | ref <expression>
-;;                    | deref <expression>
-;;                    | set-ref <expression> <expression>
-;;                    | new <identifier>(<expression> { , <expression> })
-;;                    | send <expression> <identifier>(<expression> { , <expression> })
-;;                    | super <identifier>(<expression> { , <expression> })
+;;                       <lit-exp (datum)>
+;;                   ::= <identifier>
+;;                       <var-exp (id)>
+;;                   ::= <string>
+;;                       <string-exp (datum)>
+;;                   ::= <bool>
+;;                       <bool-exp (b)>
+;;                   ::= <x16 (<number> { , <number> }*)>
+;;                       <hex-exp (d1 ds)>
+;;                   ::= <' identifier>
+;;                       <quoted-exp (id)>
+;;                   ::= <circuit>
+;;                       <circuit-exp (circ)>
+;;                       <circuit>         ::= <gate-list>
+;;                       <gate-list>       ::= empty
+;;                                             <gate> <gate-list>
+;;                       <gate>            ::= <identifier> <type> <input-list>
+;;                       <type>            ::= and | or | not | xor
+;;                       <input-list>      ::= empty
+;;                                           | <bool> <input-list>
+;;                                           | <identifier> <input-list>
+;;                   ::= <primitive>(<expression> { , <expression> }*)
+;;                       <primapp-exp (prim rands)>
+;;                   ::= if <expression> then <expression> else <expression>
+;;                       <if-exp (test-exp true-exp false-exp)>
+;;                   ::= var { <identifier> = <expression> }* in <expression>
+;;                       <var-assign-exp (ids rands body)>
+;;                   ::= const { <identifier> = <expression> }* in <expression>
+;;                       <const-assign-exp (ids rands body)>
+;;                   ::= rec  {identifier ({identifier}*(,)) = <expression>}* in <expression>
+;;                       <letrec-exp (proc-names idss bodies letrec-body)>
+;;                   ::= proc({<identifier>}*(,)) <expression>
+;;                       <proc-exp (ids body)>
+;;                   ::= (<expression> <expression>*)
+;;                       <app-exp (rator rands)>
+;;                   ::= begin <expression> { ; <expression> }* end
+;;                       <begin-exp (exp exps)>
+;;                   ::= while <expression> do <expression> done
+;;                       <while-exp (test body)>
+;;                   ::= for <identifier> in <expression> do <expression> done
+;;                       <for-exp (iter struct body)>
+;;                   ::= [ <expression> { ; <expression> }* ]
+;;                       <list-exp (elements)>
+;;                   ::= tuple [ <expression> {  <expression> }* ]
+;;                       <tuple-exp (elements)>
+;;                   ::= { <identifier> = <expression> { ; <identifier> = <expression> }* }
+;;                       <record-exp (key value keys values)>
+;;                   ::= class <identifier> extends <identifier> {field <identifier>}*{method-decl}*
+;;                       <class-decl (class-name super-name field-ids m-decls)>
+;;                   ::= method <identifier>(<identifier> { , <identifier> }*) <expression>
+;;                       <method-decl (method-name ids body)>
+;;                   ::= new <identifier>(<expression> { , <expression> }*)
+;;                       <new-object-exp (class-name rands)>
+;;                   ::= send <expression> <identifier>(<expression> { , <expression> }*)
+;;                       <method-app-exp (obj-exp method-name rands)>
+;;                   ::= super <identifier>(<expression> { , <expression> }*)
+;;                       <super-call-exp (method-name rands)>
 
-;; <primitive>       ::= + | - | * | add1 | sub1 | zero? | list | cons | nil | car | cdr | null?
-;;                   ::= string-length | string-append
-;;                   ::= create-list | append | ref-list | set-list
-;;                   ::= crear-tupla | tupla? | ref-tuple
-;;                   ::= crear-registro | registros? | ref-registro | set-registro
+;; <primitive>       ::= + | - | * | / | mod | add1 | sub1 
+;;                   ::= s-len | s-append
+;;                   ::= crear-lista | append | ref-list | set-list | vacio | vacio? | lista?|
+;;                       cabeza | cola
+;;                   ::= crear-tupla | tupla? | ref-tuple | cabeza | cola | vacio | vacio?
+;;                   ::= crear-registro | registro? | ref-registro | set-registro
 
 ;; <expr-bool>       ::= <pred-prim>(<expression>, <expression>)
 ;;                    | <oper-bin-bool>(<expr-bool>, <expr-bool>)
@@ -81,14 +113,11 @@
 ;; <tuple>           ::= tuple [ <expression> { ; <expression> } ]
 ;; <record>          ::= { <identifier> = <expression> { ; <identifier> = <expression> } }
 
-;; <bool>            ::= true | false
+;; <bool>            ::= True | False
 ;; <string>          ::= "..."
-;; <hex>             ::= 16x([0-15]*)
-;; <float>           ::= [0-9].[0-9]
-
-;; <class-decl>      ::= class <identifier> extends <identifier>
-;;                         { field <identifier> }*
-;;                         { method <identifier>(<identifier> { , <identifier> }) <expression> }*
+;; <hex>             ::= 16x(<0-15>*)
+;; <int>             ::= <0-9>+
+;; <float>           ::= <0-9>+.<0-9>+
 ;;
 ;; ========================================================================================
 ;; INDICE:
@@ -178,7 +207,6 @@
                 const-assign-exp)
     (expression ("set" identifier "=" expression)
                 set-exp)
-    (expression ("mostrar" "(" expression ")") mostrar-exp)
     (expression (bool) bool-exp)
     (expression (type) type-exp)
     (expression (circuit) circuit-exp)
@@ -229,7 +257,6 @@
     (primitive ("append") append-list-prim)
     (primitive ("ref-list") index-list-prim)
     (primitive ("set-list") set-list-prim)
-    (primitive ("print") print-prim)
 
     ;; Primitivas tuplas
     (primitive ("crear-tupla") create-param-tuple-prim)
@@ -242,6 +269,10 @@
     (primitive ("registro?") is-record-prim )
     (primitive ("ref-registro") index-record-prim )
     (primitive ("set-registro") set-record-prim )
+
+    ;; Primitiva para imprimir
+    (primitive ("print") print-prim)
+
 
     ;; Construcción del circuito
     (circuit ("C(" "circuit" "(" "gate-list" gate-list ")" ")") a-circuit)
@@ -446,19 +477,6 @@
                                       (apply-env-ref parent id)))))))
                  (unless muts (eopl:error 'set-exp "No se puede reasignar: ~s es const" id))
                  (setref! ref (eval-expression rhs-exp env)) 1))
-      (mostrar-exp (exp)
-                   (let ((val (eval-expression exp env)))
-                     (cond
-                       ;; Valores primitivos
-                       [(number? val) (display val)]
-                       [(string? val) (display val)]
-                       [(symbol? val) (display val)]
-                       [(eq? val "True") (display #t)]
-                       [(eq? val "False") (display #f)]
-                       [else (display val)])
-                     (newline)
-                     val))
-
       ;; Expresiones para circuitos
       (bool-exp (b)
               (cases bool b
