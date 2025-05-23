@@ -165,7 +165,13 @@
      number)
     (number
      ("-" digit (arbno digit))
-     number)))
+     number)
+    (identifier
+      ("__" (arbno (or letter digit "_" "-" "?")) "__")
+      symbol)))
+    
+
+ 
 ;;*******************************************************************************************
 ;; 2.Especificación_Sintáctica (gramática)
 ;;*******************************************************************************************
@@ -312,7 +318,7 @@
       a-class-decl)
 
     (method-decl
-      ("method" identifier 
+      ("def" identifier 
         "("  (separated-list identifier ",") ")" ; method ids
         expression 
         )
@@ -533,7 +539,7 @@
         (let ((args (eval-rands rands env))
               (obj (new-object class-name)))
           (find-method-and-apply
-            'initialize class-name obj args)
+            '__init__ class-name obj args)
           obj))
       (method-app-exp (obj-exp method-name rands)
         (let ((args (eval-rands rands env))
