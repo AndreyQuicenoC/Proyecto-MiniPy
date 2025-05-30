@@ -144,31 +144,31 @@
 ;;*******************************************************************************************
 (define the-lexical-spec
   '((white-sp
-     (whitespace) skip)
+      (whitespace) skip)
     (comment
-     ("%" (arbno (not #\newline))) skip)
+      ("%" (arbno (not #\newline))) skip)
     (string
-     ("\"" (arbno (not #\")) "\"")
-     string)
+      ("\"" (arbno (not #\")) "\"")
+        string)
     (quote-token ("'") symbol) ; reconoce el carácter de comilla simple (') y lo trata como un símbolo
     (identifier
-     (letter (arbno (or letter digit "_" "-" "?")))
-     symbol)
+      (letter (arbno (or letter digit "_" "-" "?")))
+        symbol)
     (number
-     (digit (arbno digit) "." digit (arbno digit))
-     number)
+      (digit (arbno digit) "." digit (arbno digit))
+        number)
     (number
-     (digit (arbno digit))
-     number)
+      (digit (arbno digit))
+        number)
     (number
-     ("-" digit (arbno digit) "," digit (arbno digit))
-     number)
+      ("-" digit (arbno digit) "," digit (arbno digit))
+        number)
     (number
-     ("-" digit (arbno digit))
-     number)
+      ("-" digit (arbno digit))
+        number)
     (identifier
       ("__" (arbno (or letter digit "_" "-" "?")) "__")
-      symbol)))
+        symbol)))
     
 
  
@@ -205,14 +205,12 @@
       "in" expression)
      letrec-exp)
     ; Asignación de variables
-    (expression ("begin" expression (arbno ";" expression) "end")
-                begin-exp)
-    (expression ("var" (arbno identifier "=" expression) "in" expression)
-                var-assign-exp)
-    (expression ("const" (arbno identifier "=" expression) "in" expression)
-                const-assign-exp)
-    (expression ("set" identifier "=" expression)
-                set-exp)
+    (expression ("begin" expression (arbno ";" expression) "end") begin-exp)
+    (expression ("var" (arbno identifier "=" expression) "in" expression) var-assign-exp)
+    (expression ("const" (arbno identifier "=" expression) "in" expression) const-assign-exp)
+    (expression ("set" identifier "=" expression) set-exp)
+
+    ; Expresiones de circuitos y booleanas
     (expression (bool) bool-exp)
     (expression (type) type-exp)
     (expression (circuit) circuit-exp)
@@ -232,7 +230,7 @@
     (primitive ("<=") less-equal-prim)
     (primitive (">=") greater-equal-prim)
     (primitive ("==") equal-prim)
-    (primitive ("=!") not-equal-prim)
+    (primitive ("!=") not-equal-prim)
     (primitive ("&&") and-prim)
     (primitive ("||")  or-prim)
     (primitive ("!") not-prim)
@@ -245,9 +243,11 @@
     (primitive ("hexmod") mod-hex-prim)  
     (primitive ("hexadd1") incr-hex-prim)
     (primitive ("hexsub1") decr-hex-prim)
+
     ;; Primitivas de cadenas
     (primitive ("s-len") string-length-prim)
     (primitive ("s-append") string-append-prim)
+
     ;; Primitivas de circuitos
     (primitive ("eval-circuit") eval-circuit-prim)
     (primitive ("connect-circuits") connect-circuits-prim)
@@ -271,6 +271,7 @@
 
     ;; Primitivas registros
     (primitive ("crear-registro") create-param-record-prim)
+
     ; (primitive ("crear-registro-veloz") create-param-record-fast-prim)
     (primitive ("registro?") is-record-prim )
     (primitive ("ref-registro") index-record-prim )
@@ -278,7 +279,6 @@
 
     ;; Primitiva para imprimir
     (primitive ("print") print-prim)
-
 
     ;; Construcción del circuito
     (circuit ("C(" "circuit" "(" "gate-list" gate-list ")" ")") a-circuit)
@@ -305,10 +305,10 @@
     (expression ("[" (arbno expression) "]") list-exp)
     (expression ("tuple" "[" (arbno expression) "]") tuple-exp)
     (expression ("{" identifier "=" expression (arbno ";" identifier "=" expression) "}") record-exp)
+    
     ;;*******************************************************************************************
     ;; 2.1. Nuevas producciones para OOP
     ;;*******************************************************************************************
-
     (class-decl                         
       ("class" identifier 
         "extends" identifier                   
@@ -335,15 +335,16 @@
 
     (expression                                
       ("super" identifier    "("  (separated-list expression ",") ")")
-      super-call-exp)
-
-    ))
+      super-call-exp)))
 
 ;Construidos automáticamente:
 (sllgen:make-define-datatypes the-lexical-spec the-grammar)
 (define show-the-datatypes
   (lambda () (sllgen:list-define-datatypes the-lexical-spec the-grammar)))
 ;;*******************************************************************************************
+
+
+
 ;; 3.Parser_Scanner_Interfaz
 ;;*******************************************************************************************
 
@@ -362,14 +363,14 @@
                          (sllgen:make-stream-parser
                           the-lexical-spec
                           the-grammar)))
-
 ;;*******************************************************************************************
+
+
 ;; 4.Evaluación_De_Expresiones
 ;;*******************************************************************************************
 
 ;eval-program: <programa> -> numero
 ; función que evalúa un programa teniendo en cuenta un ambiente dado (se inicializa dentro del programa)
-
 (define eval-program 
   (lambda (pgm)
     (cases program pgm
@@ -470,6 +471,7 @@
                   (eval-expression
                       body
                       (extend-const-env ids vals env))))
+      ; Reasignación de variables
       (set-exp (id rhs-exp)
               (let ((ref  (apply-env-ref env id))
                   (muts 
@@ -483,6 +485,7 @@
                                       (apply-env-ref parent id)))))))
                  (unless muts (eopl:error 'set-exp "No se puede reasignar: ~s es const" id))
                  (setref! ref (eval-expression rhs-exp env)) 1))
+      
       ;; Expresiones para circuitos
       (bool-exp (b)
               (cases bool b
@@ -499,10 +502,43 @@
 
       ; Expresiones de control
       (for-exp (iter struct body)
-               (let ((estructura (eval-expression struct env)))                                
-                    (let ((elements (get-li estructura)))
+              (let ((estructura (eval-expression struct env)))
+                (let ((elements (get-li estructura)))
+                  (cond
+                    ;; Caso 1: Estructura es un rango [inicio fin] o [inicio fin paso]
+                    ((and (lista? estructura) 
+                          (let ((len (length elements)))
+                            (and (>= len 2) (<= len 3)
+                                (and map number? (map (lambda (x) 
+                                                      (if (target? x)
+                                                          (deref-target x)
+                                                          x))
+                                                    elements)))))
+                    (let* ((vals (map (lambda (x) 
+                                        (if (target? x)
+                                            (deref-target x) 
+                                            x))
+                                      elements))
+                            (inicio (car vals))
+                            (fin (cadr vals))
+                            (paso (if (= (length vals) 3) 
+                                      (caddr vals) 
+                                      1)))
+                      (let loop ((current inicio)
+                                  (last-val 1))
+                        (if (if (> paso 0) (> current fin) (< current fin))
+                            last-val
+                            (let ((nuevo-env (extend-env
+                                              (list iter)
+                                              (list current)
+                                              env)))
+                              (loop (+ current paso) 
+                                    (eval-expression body nuevo-env)))))))
+                    
+                    ;; Caso 2: Estructura es una colección iterable (comportamiento original)
+                    (else
                       (let loop ((items elements)
-                                 (last-val 1))
+                                (last-val 1))
                         (if (null? items)
                             last-val
                             (let ((item (car items))
@@ -511,12 +547,14 @@
                                                 (list iter)
                                                 (list (if (pair? item) (cdr item) item))
                                                 env)))
-                                (loop rest (eval-expression body nuevo-env)))))))))
+                                (loop rest (eval-expression body nuevo-env)))))))))))
       (while-exp (test body)
                  (let loop ((last-val 1))
                    (if (true-value? (eval-expression test env))
                        (loop (eval-expression body env))
                        last-val)))
+
+      ; Expresiones de datos estructurados
       (list-exp (elements)
                 (let ((vals (eval-rands elements env)))
                   (listica vals))
@@ -533,8 +571,7 @@
                             (list (symbol->string k) tgt))
                           ks targs))))
 
-      ;^;;;;;;;;;;;;;;; begin new cases for chap 5 ;;;;;;;;;;;;;;;;
-      
+      ; Expresiones de OOP
       (new-object-exp (class-name rands)
         (let ((args (eval-rands rands env))
               (obj (new-object class-name)))
@@ -550,66 +587,73 @@
         (let ((args (eval-rands rands env))
               (obj (apply-env env 'self)))
           (find-method-and-apply
-            method-name (apply-env env '%super) obj args)))
+            method-name (apply-env env '%super) obj args))))))
 
 
-      )))
+;;;;;;;;;;;;; Declaraciones ;;;;;;;;;;;;;
 
-;;*******************************************************************************************
-;; Declaraciones
-;;*******************************************************************************************
-
+; Elaboración de declaraciones de clase
 (define class-decl->class-name
   (lambda (c-decl)
     (cases class-decl c-decl
       (a-class-decl (class-name super-name field-ids m-decls)
         class-name))))
 
+; Obtener el nombre de la superclase
 (define class-decl->super-name
   (lambda (c-decl)
     (cases class-decl c-decl
       (a-class-decl (class-name super-name field-ids m-decls)
         super-name))))
 
+; Obtener los identificadores de campo de la clase
 (define class-decl->field-ids
   (lambda (c-decl)
     (cases class-decl c-decl
       (a-class-decl (class-name super-name field-ids m-decls)
         field-ids))))
 
+; Obtener las declaraciones de método de la clase
 (define class-decl->method-decls
   (lambda (c-decl)
     (cases class-decl c-decl
       (a-class-decl (class-name super-name field-ids m-decls)
         m-decls))))
 
+; Elaboración de declaraciones de clase
 (define method-decl->method-name
   (lambda (md)
     (cases method-decl md
       (a-method-decl (method-name ids body) method-name))))
 
+; Obtener los identificadores de método
 (define method-decl->ids
   (lambda (md)
     (cases method-decl md
       (a-method-decl (method-name ids body) ids))))
 
+; Obtener el cuerpo de la declaración del método
 (define method-decl->body
   (lambda (md)
     (cases method-decl md
       (a-method-decl (method-name ids body) body))))
 
+; Obtener los nombres de los métodos de una lista de declaraciones de método
 (define method-decls->method-names
   (lambda (mds)
     (map method-decl->method-name mds)))
-
 ;;*******************************************************************************************
+
+
+
 ;; 5.Funciones_Evaluación
 ;;*******************************************************************************************
-; Lista de operandos (expresiones)
+; Evalúa una lista de operandos (expresiones)
 (define eval-rands
   (lambda (rands env)
     (map (lambda (x) (eval-rand x env)) rands)))
 
+; Evalúa un único operando (expresión) y devuelve un target
 (define eval-rand
   (lambda (rand env)
     (cases expression rand
@@ -618,10 +662,12 @@
       (else
        (direct-target (eval-expression rand env))))))
 
+; Evalúa una lista de operandos (expresiones) y devuelve una lista de targets
 (define eval-rands-ref
   (lambda (rands env)
     (map (lambda (x) (eval-rand-ref x env)) rands)))
 
+; Evalúa un único operando (expresión) y devuelve un target indirecto
 (define eval-rand-ref
   (lambda (rand env)
     (cases expression rand
@@ -634,23 +680,28 @@
       (else
        (direct-target (eval-expression rand env))))))
 
+; Evalúa los operandos de una aplicación de primitiva
 (define eval-primapp-exp-rands
   (lambda (rands env)
     (map (lambda (expr)
            (unwrap-target (eval-expression expr env)))
          rands)))
 
+; Evalúa los operandos de una expresión let
 (define eval-let-exp-rands
   (lambda (rands env)
     (map (lambda (x) (eval-let-exp-rand x env))
          rands)))
 
+; Evalúa un único operando (expresión) en el contexto de una expresión let
 (define eval-let-exp-rand
   (lambda (rand env)
     (direct-target (eval-expression rand env))))
-
 ;;*******************************************************************************************
-;; 6.Primitivas
+
+
+
+;; 6. Primitivas
 ;;*******************************************************************************************
 (define apply-primitive
   (lambda (prim args env)
@@ -685,85 +736,81 @@
       (decr-prim ()
               (if (null? args) (eopl:error 'decr-prim "No argument provided")
                   (- (car args) 1)))
-      ;; Primitiva de módulo-.
+      ;; Primitiva de módulo.
       (mod-prim ()
-                (let* ([a (car args)]
-                       [b (cadr args)])
+              (let* ([a (car args)]
+                  [b (cadr args)])
                   (when (= b 0)
-                    (eopl:error 'mod-prim "Division by zero"))
+                      (eopl:error 'mod-prim "Division by zero"))
                   ;; módulo uniforme para enteros y reales:
                   (let ([q (floor (/ a b))])
-                    (- a (* b q)))))
+                      (- a (* b q)))))
+
       ;; Primitivas booleanas
       (less-prim ()
-                 (if (null? args)
-                     (eopl:error 'less-prim "No arguments provided")
-                     (let loop ([prev (num-of (car args))] [rs (cdr args)])
-                       (if (null? rs)
-                           #t
-                           (let ([cur (num-of (car rs))])
-                             (if (< prev cur)
-                                 (loop cur (cdr rs))
-                                 #f))))))
-
+              (if (null? args)
+                  (eopl:error 'less-prim "No arguments provided")
+                  (let loop ([prev (num-of (car args))] [rs (cdr args)])
+                      (if (null? rs)
+                          #t
+                          (let ([cur (num-of (car rs))])
+                              (if (< prev cur)
+                                  (loop cur (cdr rs))
+                                  #f))))))
       (greater-prim ()
-                    (if (null? args)
-                        (eopl:error 'greater-prim "No arguments provided")
-                        (let loop ([prev (num-of (car args))] [rs (cdr args)])
-                          (if (null? rs)
-                              #t
-                              (let ([cur (num-of (car rs))])
-                                (if (> prev cur)
-                                    (loop cur (cdr rs))
-                                    #f))))))
-
+              (if (null? args)
+                  (eopl:error 'greater-prim "No arguments provided")
+                  (let loop ([prev (num-of (car args))] [rs (cdr args)])
+                      (if (null? rs)
+                          #t
+                          (let ([cur (num-of (car rs))])
+                              (if (> prev cur)
+                                  (loop cur (cdr rs))
+                                  #f))))))
       (less-equal-prim ()
-                       (if (null? args)
-                           (eopl:error 'less-equal-prim "No arguments provided")
-                           (let loop ([prev (num-of (car args))] [rs (cdr args)])
-                             (if (null? rs)
-                                 #t
-                                 (let ([cur (num-of (car rs))])
-                                   (if (<= prev cur)
-                                       (loop cur (cdr rs))
-                                       #f))))))
-
+              (if (null? args)
+                  (eopl:error 'less-equal-prim "No arguments provided")
+                  (let loop ([prev (num-of (car args))] [rs (cdr args)])
+                      (if (null? rs)
+                          #t
+                          (let ([cur (num-of (car rs))])
+                              (if (<= prev cur)
+                                  (loop cur (cdr rs))
+                                  #f))))))
       (greater-equal-prim ()
-                          (if (null? args)
-                              (eopl:error 'greater-equal-prim "No arguments provided")
-                              (let loop ([prev (num-of (car args))] [rs (cdr args)])
-                                (if (null? rs)
-                                    #t
-                                    (let ([cur (num-of (car rs))])
-                                      (if (>= prev cur)
-                                          (loop cur (cdr rs))
-                                          #f))))))
-
+              (if (null? args)
+                  (eopl:error 'greater-equal-prim "No arguments provided")
+                  (let loop ([prev (num-of (car args))] [rs (cdr args)])
+                      (if (null? rs)
+                          #t
+                          (let ([cur (num-of (car rs))])
+                              (if (>= prev cur)
+                                  (loop cur (cdr rs))
+                                  #f))))))
       (equal-prim ()
-                  (if (null? args)
-                      (eopl:error 'equal-prim "No arguments provided")
-                      (let ([x0 (car args)])
-                        (cond
+              (if (null? args)
+                  (eopl:error 'equal-prim "No arguments provided")
+                  (let ([x0 (car args)])
+                      (cond
                           ;; caso string
                           [(string? x0)
-                           (let loop ([rs (cdr args)])
-                             (if (null? rs)
-                                 #t
-                                 (let ([y (car rs)])
-                                   (if (and (string? y)
-                                            (string=? x0 y))
-                                       (loop (cdr rs))
-                                       #f))))]
+                              (let loop ([rs (cdr args)])
+                                  (if (null? rs)
+                                      #t
+                                      (let ([y (car rs)])
+                                          (if (and (string? y)
+                                                  (string=? x0 y))
+                                              (loop (cdr rs))
+                                              #f))))]
                           ;; caso numérico/boolean/hex
                           [else
-                           (let ([base (num-of x0)])
-                             (let loop ([rs (cdr args)])
-                               (if (null? rs)
-                                   #t
-                                   (if (= base (num-of (car rs)))
-                                       (loop (cdr rs))
-                                       #f))))]))))
-
+                              (let ([base (num-of x0)])
+                                  (let loop ([rs (cdr args)])
+                                      (if (null? rs)
+                                          #t
+                                          (if (= base (num-of (car rs)))
+                                              (loop (cdr rs))
+                                              #f))))]))))
       (not-equal-prim ()
                       (if (null? args)
                           (eopl:error 'not-equal-prim "No arguments provided")
@@ -779,18 +826,17 @@
                       (cond [(eq? v #f) #f]
                             [(null? rest)   #t]
                             [else (loop (deref-target (car rest)) (cdr rest))]))))
-
       (or-prim ()
                (if (< (length args) 2) (eopl:error 'or-prim "Need at least two args")
                    (let loop ((v (deref-target (car args))) (rest (cdr args)))
                      (cond [(eq? v #t) #t]
                            [(null? rest)   #f]
                            [else (loop (deref-target (car rest)) (cdr rest))]))))
-
       (not-prim ()
                 (if (not (= (length args) 1)) (eopl:error 'not-prim "Need exactly one arg")
                     (let ((v (deref-target (car args))))
                       (if (eq? v #t) #f #t))))
+
       ;; Primitivas de listas
       (empty-list-prim ()                    
               (let ((val (get-li (car args))))
@@ -800,6 +846,7 @@
                       [(eopl:error 'empty-prim "Not a list or tuple: ~s" val)])))
       (create-empty-list-prim ()
               (cond
+                  [(null? args) (listica '())]  ; Sin argumentos, crea lista vacía por defecto
                   [(lista? (car args)) (listica '())]
                   [(tupla? (car args)) (tuplita '())]
                   [(eopl:error 'empty-prim "Not a list or tuple:")]))
@@ -813,9 +860,7 @@
       (head-list-prim ()
               (car (get-li (car args))))
       (last-list-prim ()
-                      (last (get-li (car args)))
-                      )
-
+                      (last (get-li (car args))))
       (append-list-prim ()
                         (let* ((eval-args (eval-primapp-exp-rands args env))
                                (id-eval   (obtener-id (car args)))
@@ -855,14 +900,9 @@
                                       lit
                                       (direct-target lit))))))
                           1))
-
       (index-list-prim ()
-
                        (if (lista? (car args)) (list-pos (get-li (car args)) (cadr args))
-                           (eopl:error 'empty-prim "Not a list"))
-
-                       )
-
+                           (eopl:error 'empty-prim "Not a list")))
       (set-list-prim ()
                      (let* ((eval-args (eval-primapp-exp-rands args env))
                             (id-eval   (obtener-id (car args)))
@@ -904,14 +944,8 @@
                                    lit
                                    (direct-target lit))))))
                        1))
-      
-      (print-prim ()
-                  (let* ((raw-tgt (car args))
-                         (v       (deref-target raw-tgt)))
-                    (print-value v)
-                    (newline)
-                    1))
-      ;; Tuplas
+
+      ;; Primitivas de Tuplas
       (create-param-tuple-prim ()
               (repetir (car args) (cadr args) 'tupla))
       (is-tuple-prim ()
@@ -923,14 +957,12 @@
               (if (tupla? (car args)) (list-pos (get-li (car args)) (cadr args))
                   (eopl:error 'empty-prim "Not a tuple")))
 
-      ;; Registros
+      ;; Primivitas de Registros
       (is-record-prim ()
               (let ((val (car args))) 
                   (if (registro? val)
                       #t
                       #f)))
-      ; (create-param-record-fast-prim ()
-      ;         (repetir (list (car args) (cadr args)) (caddr args) 'registro))
       (create-param-record-prim ()
                                 (let* ([keys-val (eval-expression (car args) env)]
                                        [vals-val (eval-expression (cadr args) env)]
@@ -1003,6 +1035,7 @@
                                 (new-rec   (registrico new-pairs)))
                            (setref! rec-ref new-rec)
                            1)))
+      
       ;; Primitivas hexadecimales
       (add-hex-prim ()
                     (let* ([ds1 (get-hex-digits (car  args))]
@@ -1025,12 +1058,10 @@
                             [prod (* (hex-list->decimal ds1)
                                      (hex-list->decimal ds2))])
                        (hex-val (decimal->hex-list prod))))
-
       (incr-hex-prim ()
                      (let* ([ds  (get-hex-digits (car args))]
                             [inc (+ 1 (hex-list->decimal ds))])
                        (hex-val (decimal->hex-list inc))))
-
       (decr-hex-prim ()
                      (let* ([ds  (get-hex-digits (car args))]
                             [dec (- (hex-list->decimal ds) 1)])
@@ -1053,16 +1084,25 @@
           (if (= n2 0)
               (eopl:error 'mod-hex-prim "Division by zero")
               (hex-val (decimal->hex-list (remainder n1 n2))))))
+      
       ;; Primitivas de cadenas
       (string-length-prim ()
                           (if (null? args)
                               (eopl:error 'string-length-prim "No argument provided")
                               (string-length (car args))))
-
       (string-append-prim ()
                           (apply string-append args))
-      ;; Primitiva: eval-circuit(circuito, entrada)
-      (eval-circuit-prim ()
+
+      ;; Primitiva de impresión
+      (print-prim ()
+                  (let* ((raw-tgt (car args))
+                         (v       (deref-target raw-tgt)))
+                    (print-value v)
+                    (newline)
+                    0))
+
+      ;; Primitivas de circuitos
+      (eval-circuit-prim () ;; Primitiva: eval-circuit(circuito, entrada)
                          (let ((circ (car args)))
                            (eval-circuit circ env)))
       (connect-circuits-prim () ;; Primitiva: connect-circuits(c1, c2, input)
@@ -1079,9 +1119,11 @@
                           ('xor (xor-type)))))
                       (merge-circuits circ1 circ2 gate-type new-name))))))) 
 ;;*******************************************************************************************
+
+
+
 ;; 7.Evaluación_De_Circuitos
 ;;*******************************************************************************************
-
 ; eval-circuit: evalúa un circuito completo compuesto por una lista de compuertas.
 ;   circ: un circuito (a-circuit) con una lista de compuertas
 ;   env: ambiente inicial (valores booleanos asociados a entradas)
@@ -1168,7 +1210,6 @@
                       (inps (cdr lst) (+ count (if (car lst) 1 0)))))))))
 
 ;; Conexión_De_Circuitos_En_Serie: se llama a connect-circuits
-
 ; connect-circuits: combina dos circuitos, reemplazando una entrada del segundo circuito
 ; por el id de la última compuerta del primero, y luego une ambas listas de compuertas.
 ;   c1: circuito base (se mantiene igual)
@@ -1185,10 +1226,7 @@
                                 gates1
                                 (replace-gates gates2  input-to-replace (get-last-gate-id gates1))))))))))
 
-
-
 ;; Conexión_De_Circuitos_En_Paralelo: se llama a merge-circuits
-
 ; merge-circuits: une dos circuitos agregando una nueva compuerta lógica al final
 ;   c1: primer circuito
 ;   c2: segundo circuito
@@ -1216,10 +1254,11 @@
                                                        gates2
                                                        (cons-gate-list new-gate (empty-gate-list))))))
                                 (a-circuit combined-gates))))))))
-
-
 ;;*******************************************************************************************
-;; 8.Datatypes_de_List_Tuple_y_Registro
+
+
+
+;; 8.Datatypes_de_List_Tuple_y_Registro, además de objetos, clases, métodos y procedimientos
 ;;*******************************************************************************************
 (define-datatype lista lista?
   (listica (l (list-of scheme-value?))))
@@ -1230,8 +1269,10 @@
 (define-datatype registro registro?
   (registrico (pairs (list-of pair?))))
 
-;; PARA OOP
 
+;;;;;;;;;;;;;;;;;;; Para OOP ;;;;;;;;;;;;;;;;;;;
+
+; Definición de tipos de datos para clases, objetos y métodos
 (define-datatype class class?
   (a-class
     (class-name symbol?)  
@@ -1240,12 +1281,13 @@
     (field-ids (list-of symbol?))
     (methods method-environment?)))
 
-; an object is now just a single part, with a vector representing the managed storage for the all the fields. 
+; Definición de tipos de datos para objetos y métodos
 (define-datatype object object? 
   (an-object
     (class-name symbol?)
     (fields vector?)))
 
+; Definición de tipos de datos para métodos
 (define-datatype method method?
   (a-method
     (method-decl method-decl?)
@@ -1268,12 +1310,13 @@
     (cases procval proc
       (closure (ids body env)
                (eval-expression body (extend-env ids args env))))))
-
 ;;*******************************************************************************************
+
+
+
 ;; 9.Funciones_Ambientes
 ;;*******************************************************************************************
-
-;definición del tipo de dato ambiente
+; enviroment: definición del tipo de dato ambiente
 (define-datatype environment environment?
   (empty-env-record)
   (extended-env-record
@@ -1286,11 +1329,12 @@
   (lambda (v) 
     #t))
 
-;empty-env:      -> enviroment
-;función que crea un ambiente vacío
+; empty-env: -> enviroment
+; función que crea un ambiente vacío
 (define empty-env
   (lambda ()
-    (empty-env-record)))       ;llamado al constructor de ambiente vacío
+    ; llamado al constructor de ambiente vacío
+    (empty-env-record)))       
 
 ;extend-env: <list-of symbols> <list-of numbers> enviroment -> enviroment
 ;función que crea un ambiente extendido
@@ -1350,12 +1394,14 @@
                                  (a-ref pos vals)
                                  (apply-env-ref env sym)))))))
 
-;; new for ch 5
+; Crea un ambiente extendido con referencias a símbolos
 (define extend-env-refs
   (lambda (syms vec env)
     (extended-env-record syms vec (make-vector (length syms) #t) env)))
-
 ;;*******************************************************************************************
+
+
+
 ;; 10.Funciones_Auxiliares_Para_Listas_Tuplas_y_Registros
 ;;*******************************************************************************************
 
@@ -1376,6 +1422,7 @@
     )
   )
 
+; Auxiliar de repetir: crea una lista o tupla con el valor b repetido a veces
 (define aux-repetir
   (lambda (b a)
     (if (zero? a)
@@ -1392,7 +1439,8 @@
                     (cdr b))
               (aux-repetir-registro b (+ i 1) a))
         )))
-; get-li: función auxiliar para obtener el valor de una lista, tupla o registro
+
+; Función auxiliar para obtener el valor de una lista, tupla o registro
 (define get-li
   (lambda (li)
     (let ((v (cond
@@ -1414,12 +1462,14 @@
                      "Not a data struct, got: ~s"
                      v))))))
 
+; Función auxiliar para obtener el último elemento de una lista, tupla o registro
 (define last
   (lambda (lst)
     (if (null? (cdr lst))
         (car lst)
         (listica (cdr lst)))))
 
+; Usa putf-aux para agregar un elemento a una lista, tupla o registro
 (define putf 
   (lambda (lst elem)
     (cond
@@ -1437,6 +1487,7 @@
       [else (eopl:error 'append "Not a list")]
       )))
 
+; Consiste en agregar un elemento a una lista, tupla o registro
 (define putf-aux
   (lambda (lst val)
     (let ((new-cell
@@ -1457,7 +1508,7 @@
           (cons (car lst)
                 (putf-aux (cdr lst) val))))))
 
-; list-pos: función auxiliar para obtener el elemento en la posición x de una lista
+; Función auxiliar para obtener el elemento en la posición x de una lista
 (define list-pos
   (lambda (lst x)
     (cond
@@ -1468,17 +1519,17 @@
            (car lst)
            (list-pos (cdr lst) (- x 1)))])))
 
-; list-pos: función auxiliar para obtener el elemento en la clave x de un registro
+; Función auxiliar para obtener el elemento en la clave x de un registro
 (define record-pos
   (lambda (lst x)
     (if (null? lst)
       (eopl:error 'regis-key "Not a key on the record")
       (let ((pair (car lst)))
         (if (eq? x (string->symbol (car pair)))
-          (cdr pair)
+          (cadr pair)
           (record-pos (cdr lst) x))))))
 
-; insert-en-posicion: función auxiliar para insertar un elemento en una lista, tupla o registro
+; Función auxiliar para insertar un elemento en una lista, tupla o registro
 (define insertar-en-posicion
   (lambda (lst pos val)
     (cond
@@ -1496,7 +1547,7 @@
       [else (eopl:error 'append "Not a list")]
       )))
 
-; insertar-en-posicion-aux: función auxiliar para insertar un elemento en una lista
+; Función auxiliar para insertar un elemento en una lista
 (define insertar-en-posicion-aux
   (lambda (lst pos val)
     (let ((new-cell
@@ -1528,7 +1579,7 @@
 
 
 
-; insertar-en-clave-aux: función auxiliar para insertar un elemento en un registro
+; Función auxiliar para insertar un elemento en un registro
 (define insertar-en-clave-aux
   (lambda (lst key val)
     (cond
@@ -1541,7 +1592,7 @@
        (cons (car lst)
              (insertar-en-clave-aux (cdr lst) key val))])))
 
-; list-index: busca un símbolo en una lista y devuelve su posición
+; Busca un símbolo en una lista y devuelve su posición
 (define list-index
   (lambda (pred ls)
     (cond
@@ -1552,12 +1603,18 @@
                   (+ list-index-r 1)
                   #f))))))
 ;;****************************************************************************************
+
+
+
 ;; 11.Funciones_Auxiliares_Para_Hexadecimales
 ;;****************************************************************************************
+
+; Convierte un número hexadecimal (hex-val) a una lista de dígitos hexadecimales
 (define get-hex-digits
   (lambda (hex)
     (cases hexadecimal hex
       (hex-val (ds) ds))))
+
 ;; Convierte una lista de dígitos hexadecimales (enteros 0–15) a un número decimal
 (define (hex-list->decimal digits)
   (let loop ([acc 0] [lst digits])
@@ -1565,6 +1622,7 @@
         acc
         (loop (+ (* acc 16) (car lst))
               (cdr lst)))))
+
 ;; Convierte un número decimal ≥0 en la lista de sus dígitos hexadecimales
 (define (decimal->hex-list n)
   (let loop ([num n] [acc '()])
@@ -1573,15 +1631,20 @@
         (loop (quotient num 16)
               (cons (remainder num 16) acc)))))
 ;;****************************************************************************************
+
+
+
 ;; 12.Funciones_Auxiliares_Para_Asignación_Variables_Valor_y_Referencia
 ;;****************************************************************************************
+
+; Función auxiliar que obtiene el id de una var-exp
 (define (obtener-id exp)
   (cases expression exp
     (var-exp (id) id)
     (else (eopl:error "No es una var-exp"))))
 
-;iota: number -> list
-;función que retorna una lista de los números desde 0 hasta end
+; iota: number -> list
+; Función que retorna una lista de los números desde 0 hasta end
 (define iota
   (lambda (end)
     (let loop ((next 0))
@@ -1599,6 +1662,7 @@
 (define deref
   (lambda (ref)
     (deref-target (primitive-deref ref))))
+
 ; primitive-deref: reference -> value
 ; - primitiva que obtiene el valor de una referencia
 (define primitive-deref
@@ -1625,11 +1689,12 @@
       (a-ref (pos vec)
              (vector-set! vec pos val)))))
 
-;Definición tipos de datos referencia y blanco
+; Definición tipos de datos referencia y blanco
 (define-datatype target target?
   (direct-target (expval expval?))
   (indirect-target (ref ref-to-direct-target?)))
 
+; Definición de tipos de datos para expresiones
 (define expval?
   (lambda (x)
     (or (number? x)
@@ -1649,6 +1714,7 @@
          (cases expression exp
            (var-exp (id)          #t)
            (_                    #f)))))
+
 (define-datatype hexadecimal hexadecimal?
   (hex-val (digits (list-of integer?))))
 
@@ -1687,19 +1753,22 @@
                            (deref-target (primitive-deref ref))))
         ;; si no es target, lo devuelvo tal cual:
         x)))
-
 ;;****************************************************************************************
+
+
+
 ;; 13.Funciones_Auxiliares_Para_OOP
 ;;****************************************************************************************
-;;;;;;;;;;;;;;;; classes ;;;;;;;;;;;;;;;;
 
-;;;; constructing classes
+;;;;;;;;;;;;;;;; Construcción de clases ;;;;;;;;;;;;;;;;
 
+; Elabora una lista de declaraciones de clasesccreando las clases correspondientes en el entorno de clases.
 (define elaborate-class-decls!
   (lambda (c-decls)
     (initialize-class-env!)
     (for-each elaborate-class-decl! c-decls)))
 
+; Elabora una declaración de clase, añadiéndola al entorno de clases.
 (define elaborate-class-decl!
   (lambda (c-decl)
     (let ((super-name (class-decl->super-name c-decl)))
@@ -1715,6 +1784,7 @@
             (roll-up-method-decls
               c-decl super-name field-ids)))))))
 
+; Convierte una declaración de clase en una lista de métodos, incluyendo los heredados.
 (define roll-up-method-decls
   (lambda (c-decl super-name field-ids)
     (map
@@ -1723,7 +1793,6 @@
       (class-decl->method-decls c-decl))))
 
 ;;;;;;;;;;;;;;; objects ;;;;;;;;;;;;;;;;
-
 (define new-object
   (lambda (class-name)
     (let* ([len    (class-name->field-length class-name)]
@@ -1770,8 +1839,6 @@
       (else (lookup-method m-name (cdr methods))))))
 
 ;;;;;;;;;;;;;;;; class environments ;;;;;;;;;;;;;;;;
-
-;;; we'll just use the list of classes (not class decls)
 
 (define the-class-env '())
 
@@ -1891,8 +1958,10 @@
 (define method->ids
   (lambda (method)
     (method-decl->ids (method->method-decl method))))
-
 ;;****************************************************************************************
+
+
+
 ;; 14.Funciones_Auxiliares_Para_Encontrar_La_Posición_De_Un_Símbolo
 ;;****************************************************************************************
 (define rib-find-position
@@ -1908,17 +1977,10 @@
         ((eqv? sym (car los))
          (loop (cdr los) (+ curpos 1) curpos))
         (else (loop (cdr los) (+ curpos 1) lastpos))))))
-; ; rib-find-position: busca en la lista de símbolos de un ambiente
-; (define rib-find-position
-;   (lambda (sym los)
-;     (list-find-position sym los)))
-
-; ; list-find-position: busca un símbolo en una lista de símbolos y devuelve su posición
-; (define list-find-position
-;   (lambda (sym los)
-;     (list-index (lambda (sym1) (eqv? sym1 sym)) los)))
-
 ;;*******************************************************************************************
+
+
+
 ;; 15.Funciones_Auxiliares_Circuitos
 ;;*******************************************************************************************
 
@@ -1993,9 +2055,10 @@
       (empty-gate-list () gl2)
       (cons-gate-list (g rest)
                       (cons-gate-list g (append-gate-lists rest gl2))))))
-
-
 ;;****************************************************************************************
+
+
+
 ;; 16.Otras_Funciones_Auxiliares
 ;;****************************************************************************************
 ;Determina si es un valor booleano falso o verdadero
@@ -2033,6 +2096,10 @@
 (define print-value
   (lambda (v)
     (cond
+      ;; Caso para targets normales
+      [(target? v)
+       (print-value (deref-target v))]
+      
       [(lista? v)
        (let ((elems (get-li v)))
          (display "[")
@@ -2043,7 +2110,7 @@
                (display " ")
                (loop (cdr cells)))))
          (display "]"))]
-         
+
       [(tupla? v)
        (let ((elems (get-li v)))
          (display "(")
@@ -2067,21 +2134,247 @@
       [(registro? v)
        (let ((pairs (get-li v)))
          (display "{")
-         (let loop ((ps pairs))
+         (let loop ((ps pairs) (first? #t))
            (when (pair? ps)
+             (unless first?
+               (display "; "))
              (let* ((pair (car ps))
                     (key  (car pair))
                     (tgt  (cadr pair))
                     (val  (deref-target tgt)))
-               (display  key)
-               (display " : ")
-               (print-value val))
-             (when (cdr ps)
-               (display ", ")
-               (loop (cdr ps)))))
+               (display key)
+               (display " = ")
+               (cond
+                 [(string? val)
+                  (display "\"")
+                  (display val)
+                  (display "\"")]
+                 [else
+                  (print-value val)]))
+             (loop (cdr ps) #f)))
          (display "}"))]
-
+      [(boolean? v)
+       (display (if v "True" "False"))]
       [else
        (display v)])))
-
+;;****************************************************************************************
 (interpretador)
+
+
+
+;; 17. Pruebas
+;;****************************************************************************************
+
+; Pruebas de listas
+(scan&parse "
+  var lista = [1 2 3 4 5] in
+  begin
+    print(lista);
+    print(ref-list(lista, 0));
+    print(ref-list(lista, 2))
+  end
+")
+(scan&parse "
+  var lista = [10 20 30 40 50] in
+  begin
+    print(lista);
+    set-list(lista, 1, 99);
+    print(lista);
+    set-list(lista, 3, 77);
+    print(lista)
+  end
+")
+(scan&parse "
+  var lista1 = crear-lista(0, 5) in
+  var lista2 = vacio() in
+  begin
+    print(lista1);
+    append(lista1, 100);
+    print(lista1);
+    print(vacio?(lista2));
+    append(lista2, 42);
+    print(vacio?(lista2));
+    print(lista2)
+  end
+")
+
+; Pruebas de tuplas
+(scan&parse "
+  var tupla = tuple[1 2 3 4 5] in
+  begin
+    print(tupla);
+    print(ref-tuple(tupla, 0));
+    print(ref-tuple(tupla, 2))
+  end 
+")
+(scan&parse "
+  var t = tuple[10 20 30] in
+  var l = [10 20 30] in
+  begin
+    print(t);
+    print(tupla?(t));
+    print(tupla?(l));
+    print(lista?(t));
+    print(lista?(l))
+  end
+")
+(scan&parse "
+  var calcular = proc(x, y) tuple[+(x,y) -(x,y) *(x,y)] in
+  var resultado = (calcular 10 5) in
+  begin
+    print(resultado);
+    print(ref-tuple(resultado, 0)); %suma
+    print(ref-tuple(resultado, 1)); %resta
+    print(ref-tuple(resultado, 2))  %multiplicación
+  end
+")
+
+; Pruebas de registros
+;; Quitar los símbolos \ a la hora de correr el código en el interpretador
+(scan&parse "
+  var persona = {nombre = \"Juan\"; edad = 30; activo = True} in
+  begin
+    print(persona);
+    print(ref-registro(persona, 'nombre));
+    print(ref-registro(persona, 'edad));
+    print(ref-registro(persona, 'activo))
+  end
+")
+(scan&parse "
+  var punto = {x = 10; y = 20; z = 30} in
+  begin
+    print(punto);
+    set-registro(punto, 'x, 100);
+    print(punto);
+    set-registro(punto, 'z, 300);
+    print(punto)
+  end
+")
+;; Quitar los símbolos \ a la hora de correr el código en el interpretador
+(scan&parse "
+  var claves = [\"nombre" "edad" "ciudad\"] in
+  var valores = [\"María" 25 "Bogotá\"] in
+  var persona = crear-registro(claves, valores) in
+  begin
+    print(persona);
+    print(ref-registro(persona, 'nombre));
+    set-registro(persona, 'ciudad, \"Medellín\");
+    print(persona)
+  end
+")
+
+; Pruebas operadores lógicos y expresiones booleanas
+(scan&parse "
+  var a = True in
+  var b = False in
+  begin
+    print(&&(a, b));
+    print(||(a, b));
+    print(!(a));
+    print(!(b))
+  end
+")
+(scan&parse "
+  var x = 5 in
+  var y = 10 in
+  begin
+    print(<(x, y));
+    print(>(x, y));
+    print(<=(x, y));
+    print(>=(x, y));
+    print(==(x, y));
+    print(!=(x, y))
+  end
+")
+(scan&parse "
+  var a = 10 in
+  var b = 20 in
+  begin
+    print(&&(<(a, b),  >(b,15)));
+    print(||(>(a, b),  <(b,25)));
+    print(!(==(a, b)));
+    print(==(+(a,b), 30))
+  end
+")
+
+; Pruebas ciclo for
+(scan&parse "
+  var suma = 0 in
+  begin
+    for i in [1 5 1] do
+      begin
+        set suma = +(suma, i)
+      end
+    done;
+    print(suma)
+  end
+")
+(scan&parse "
+  var lista = [1 2 3 4 5] in
+  var resultado = [] in
+  begin
+    for i in lista do
+      begin
+        append(resultado, *(i, 2))
+      end
+    done;
+    print(resultado)
+  end
+")
+(scan&parse "
+  var lista = [1 2 3 4 5] in
+  var resultado = [] in
+  begin
+    for i in lista do
+      begin
+        if ==(mod(i, 2), 0) then
+          append(resultado, *(i, 10))
+        else
+          append(resultado, *(i, 5))
+      end
+    done;
+    print(resultado)
+  end
+")
+
+; Pruebas ciclo while
+(scan&parse "
+  var contador = 0 in
+  var suma = 0 in
+  begin
+    while <(contador, 5) do
+      begin
+        set suma = +(suma, contador);
+        set contador = +(contador, 1)
+      end
+    done;
+    print(suma)
+  end
+")
+(scan&parse "
+  var lista = [1 2 3 4 5] in
+  var resultado = [] in
+  var i = 0 in
+  begin
+    while <(i, 5) do
+      begin
+        append(resultado, *(ref-list(lista, i), 2));
+        set i = +(i, 1)
+      end
+    done;
+    print(resultado)
+  end
+")
+(scan&parse "
+  var n = 10 in
+  var factorial = 1 in
+  begin
+    while >(n, 1) do
+      begin
+        set factorial = *(factorial, n);
+        set n = -(n, 1)
+      end
+    done;
+    print(factorial)
+  end
+")
