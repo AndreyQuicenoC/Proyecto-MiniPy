@@ -24,7 +24,7 @@
 ;; - Andrey Quiceno Cabrera        - 2326081
 ;; - Juan Francesco García Vargas  - 2310174
 
-;; Fecha de entrega: 03-05-2025
+;; Fecha de entrega: 10-06-2025
 ;; ========================================================================================
 
 
@@ -82,9 +82,11 @@
 ;;                       <tuple-exp (elements)>
 ;;                   ::= { <identifier> = <expression> { ; <identifier> = <expression> }* }
 ;;                       <record-exp (key value keys values)>
+;;                   
+;;                   POO inspirada en una mezcla de Python e interpretador del curso:
 ;;                   ::= class <identifier> extends <identifier> {field <identifier>}*{method-decl}*
 ;;                       <class-decl (class-name super-name field-ids m-decls)>
-;;                   ::= method <identifier>(<identifier> { , <identifier> }*) <expression>
+;;                   ::= def <identifier>(<identifier> { , <identifier> }*) <expression>
 ;;                       <method-decl (method-name ids body)>
 ;;                   ::= new <identifier>(<expression> { , <expression> }*)
 ;;                       <new-object-exp (class-name rands)>
@@ -104,14 +106,14 @@
 ;;                    | <oper-bin-bool>(<expr-bool>, <expr-bool>)
 ;;                    | <oper-un-bool>(<expr-bool>)
 
-;; <pred-prim>       ::= < | > | <= | >= | == | <>
+;; <pred-prim>       ::= < | > | <= | >= | == | != 
 
-;; <oper-bin-bool>   ::= and | or
-;; <oper-un-bool>    ::= not
+;; <oper-bin-bool>   ::= && | ||   (Operadores inspirados en Python)
+;; <oper-un-bool>    ::= !
 
-;; <list>            ::= [ <expression> { ; <expression> } ]
-;; <tuple>           ::= tuple [ <expression> { ; <expression> } ]
-;; <record>          ::= { <identifier> = <expression> { ; <identifier> = <expression> } }
+;; <list>            ::= [ <expression> { ; <expression> }* ]
+;; <tuple>           ::= tuple [ <expression> { ; <expression> }* ]
+;; <record>          ::= { <identifier> = <expression> { ; <identifier> = <expression> }* }
 
 ;; <bool>            ::= True | False
 ;; <string>          ::= "..."
@@ -247,6 +249,7 @@
     ;; Primitivas de cadenas
     (primitive ("s-len") string-length-prim)
     (primitive ("s-append") string-append-prim)
+    (primitive ("num->str")  num->str-prim)
 
     ;; Primitivas de circuitos
     (primitive ("eval-circuit") eval-circuit-prim)
@@ -504,39 +507,7 @@
       (for-exp (iter struct body)
               (let ((estructura (eval-expression struct env)))
                 (let ((elements (get-li estructura)))
-                  (cond
-                    ;; Caso 1: Estructura es un rango [inicio fin] o [inicio fin paso]
-                    ((and (lista? estructura) 
-                          (let ((len (length elements)))
-                            (and (>= len 2) (<= len 3)
-                                (and map number? (map (lambda (x) 
-                                                      (if (target? x)
-                                                          (deref-target x)
-                                                          x))
-                                                    elements)))))
-                    (let* ((vals (map (lambda (x) 
-                                        (if (target? x)
-                                            (deref-target x) 
-                                            x))
-                                      elements))
-                            (inicio (car vals))
-                            (fin (cadr vals))
-                            (paso (if (= (length vals) 3) 
-                                      (caddr vals) 
-                                      1)))
-                      (let loop ((current inicio)
-                                  (last-val 1))
-                        (if (if (> paso 0) (> current fin) (< current fin))
-                            last-val
-                            (let ((nuevo-env (extend-env
-                                              (list iter)
-                                              (list current)
-                                              env)))
-                              (loop (+ current paso) 
-                                    (eval-expression body nuevo-env)))))))
-                    
-                    ;; Caso 2: Estructura es una colección iterable (comportamiento original)
-                    (else
+                    ;; Caso 2: Estructura es una colección iterable (comportamiento original)               
                       (let loop ((items elements)
                                 (last-val 1))
                         (if (null? items)
@@ -547,7 +518,7 @@
                                                 (list iter)
                                                 (list (if (pair? item) (cdr item) item))
                                                 env)))
-                                (loop rest (eval-expression body nuevo-env)))))))))))
+                                (loop rest (eval-expression body nuevo-env)))))))))
       (while-exp (test body)
                  (let loop ((last-val 1))
                    (if (true-value? (eval-expression test env))
@@ -1092,6 +1063,16 @@
                               (string-length (car args))))
       (string-append-prim ()
                           (apply string-append args))
+      (num->str-prim ()
+                     (cond
+                       [(null? args)
+                        (eopl:error 'num->str-prim "Se necesita al menos un argumento")]
+                       [(= (length args) 1)
+                        (number->string (car args))]              
+                       [else
+                        ;; varios números, concatenamos sus strings
+                        (apply string-append (map number->string args))]))
+
 
       ;; Primitiva de impresión
       (print-prim ()
@@ -1099,7 +1080,7 @@
                          (v       (deref-target raw-tgt)))
                     (print-value v)
                     (newline)
-                    0))
+                    1))
 
       ;; Primitivas de circuitos
       (eval-circuit-prim () ;; Primitiva: eval-circuit(circuito, entrada)
@@ -1268,7 +1249,6 @@
 
 (define-datatype registro registro?
   (registrico (pairs (list-of pair?))))
-
 
 ;;;;;;;;;;;;;;;;;;; Para OOP ;;;;;;;;;;;;;;;;;;;
 
@@ -1699,6 +1679,7 @@
   (lambda (x)
     (or (number? x)
         (boolean? x)
+        (symbol? x)
         (circuit? x)
         (tupla? x)
         (object? x)
@@ -2158,58 +2139,194 @@
       [else
        (display v)])))
 ;;****************************************************************************************
-(interpretador)
 
 
 
 ;; 17. Pruebas
 ;;****************************************************************************************
-
-; Pruebas de listas
+; Pruebas de asignación de variables:
 (scan&parse "
-  var lista = [1 2 3 4 5] in
-  begin
-    print(lista);
-    print(ref-list(lista, 0));
-    print(ref-list(lista, 2))
-  end
+var x = 10 in 
+print(x)
 ")
 (scan&parse "
-  var lista = [10 20 30 40 50] in
-  begin
-    print(lista);
-    set-list(lista, 1, 99);
-    print(lista);
-    set-list(lista, 3, 77);
-    print(lista)
-  end
+const y = 3.14 in 
+print(y)
 ")
 (scan&parse "
-  var lista1 = crear-lista(0, 5) in
-  var lista2 = vacio() in
-  begin
-    print(lista1);
-    append(lista1, 100);
-    print(lista1);
-    print(vacio?(lista2));
-    append(lista2, 42);
-    print(vacio?(lista2));
-    print(lista2)
-  end
+rec Fact (a)= if ||(==(a,0),==(a,1)) then 1 else *(a,(Fact -(a,1))) in 
+(Fact 5)
 ")
 
-; Pruebas de tuplas
+; Pruebas de expresiones:
 (scan&parse "
-  var tupla = tuple[1 2 3 4 5] in
-  begin
-    print(tupla);
-    print(ref-tuple(tupla, 0));
-    print(ref-tuple(tupla, 2))
+var x=[4 3.141519 C(circuit(gate-list 
+   (gate G1(type or)(input-list True False)) 
+   (gate G2(type and)(input-list True False)) 
+   (gate G3(type not)(input-list G2)) 
+   (gate G4(type and)(input-list G1 G3))))  
+   x16(1 10 4) \"Proyecto\" 
+   True 
+   proc(a) set a=1 
+   [1 2] 
+   {nombre=\"Jonathan\";edad=25} 
+   tuple[10 20]] 
+   in x 
+")
+(scan&parse "
+var y ='x  in y 
+")
+
+; Pruebas de estructuras de control:
+; if-then-else:
+(scan&parse "
+  var x = 10 in 
+  begin 
+    if ==(x, 10) then 
+      print(\"x es igual a 10\") 
+    else 
+      print(\"x no es igual a 10\") 
   end 
 ")
 (scan&parse "
-  var t = tuple[10 20 30] in
-  var l = [10 20 30] in
+  var y = 5 in 
+  begin 
+    if <(y, 10) then 
+      print(\"y es menor que 10\") 
+    else if >(y, 10) then 
+      print(\"y es mayor que 10\") 
+    else 
+      print(\"y es igual a 10\") 
+  end 
+")
+
+; Pruebas ciclo for
+(scan&parse "
+  var suma = 0 in 
+  begin 
+    for i in [1 5 1] do 
+      begin 
+        set suma = +(suma, i) 
+      end 
+    done; 
+    print(suma) 
+  end 
+")
+(scan&parse "
+  var lista = [1 2 3 4 5]
+  resultado = [] in 
+  begin 
+    for i in lista do 
+      begin 
+        append(resultado, *(i, 2)) 
+      end 
+    done;  
+    print(resultado) 
+  end 
+")
+(scan&parse "
+  var lista = [1 2 3 4 5]  
+  resultado = [] in 
+  begin 
+    for i in lista do 
+      begin 
+        if ==(mod(i, 2), 0) then 
+          append(resultado, *(i, 10))  
+        else 
+          append(resultado, *(i, 5)) 
+      end 
+    done; 
+    print(resultado) 
+  end 
+")
+
+; Pruebas ciclo while
+(scan&parse "
+  var contador = 0 
+  suma = 0 in 
+  begin 
+    while <(contador, 5) do 
+      begin 
+        set suma = +(suma, contador); 
+        set contador = +(contador, 1) 
+      end 
+    done;  
+    print(suma) 
+  end 
+")
+(scan&parse "
+  var lista = [1 2 3 4 5] 
+  resultado = []  
+  i = 0 in 
+  begin 
+    while <(i, 5) do  
+      begin 
+        append(resultado, *(ref-list(lista, i), 2)); 
+        set i = +(i, 1) 
+      end 
+    done;   
+    print(resultado) 
+  end 
+")
+(scan&parse "
+  var n = 5  
+  factorial = 1 in 
+  begin 
+    while >(n, 1) do 
+      begin 
+        set factorial = *(factorial, n); 
+        set n = -(n, 1) 
+      end 
+    done; 
+    print(factorial) 
+  end 
+")
+
+; Pruebas de listas
+(scan&parse "
+  var lista = [1 2 3 4 5] in 
+  begin 
+    print(lista); 
+    print(ref-list(lista, 0)); 
+    print(ref-list(lista, 2)) 
+  end 
+")
+(scan&parse "
+  var lista = [10 20 30 40 50] in 
+  begin 
+    print(lista); 
+    set-list(lista, 1, 99); 
+    print(lista); 
+    set-list(lista, 3, 77); 
+    print(lista) 
+  end 
+")
+(scan&parse "
+  var lista1 = crear-lista(0, 5)  
+  lista2 = vacio() in 
+  begin 
+    print(lista1);  
+    append(lista1, 100); 
+    print(lista1); 
+    print(vacio?(lista2)); 
+    append(lista2, 42); 
+    print(vacio?(lista2)); 
+    print(lista2)  
+  end 
+") 
+
+; Pruebas de tuplas
+(scan&parse "
+  var tupla = tuple[1 2 3 4 5] in 
+  begin 
+    print(tupla); 
+    print(ref-tuple(tupla, 0)); 
+    print(ref-tuple(tupla, 2)) 
+  end  
+")
+(scan&parse "
+  var t = tuple[10 20 30]  
+  l = [10 20 30] in 
   begin
     print(t);
     print(tupla?(t));
@@ -2219,162 +2336,202 @@
   end
 ")
 (scan&parse "
-  var calcular = proc(x, y) tuple[+(x,y) -(x,y) *(x,y)] in
-  var resultado = (calcular 10 5) in
-  begin
-    print(resultado);
-    print(ref-tuple(resultado, 0)); %suma
-    print(ref-tuple(resultado, 1)); %resta
-    print(ref-tuple(resultado, 2))  %multiplicación
-  end
-")
+  var calcular = proc(x, y) tuple[+(x,y) -(x,y) *(x,y)] in 
+  var resultado = (calcular 10 5) in 
+  begin  
+    print(resultado); 
+    print(ref-tuple(resultado, 0)); %suma  
+    print(ref-tuple(resultado, 1)); %resta  
+    print(ref-tuple(resultado, 2))  %multiplicación  
+  end 
+") 
 
 ; Pruebas de registros
 ;; Quitar los símbolos \ a la hora de correr el código en el interpretador
 (scan&parse "
-  var persona = {nombre = \"Juan\"; edad = 30; activo = True} in
-  begin
-    print(persona);
-    print(ref-registro(persona, 'nombre));
-    print(ref-registro(persona, 'edad));
-    print(ref-registro(persona, 'activo))
+  var persona = {nombre = \"Juan\"; edad = 30; activo = True} in 
+  begin 
+    print(persona); 
+    print(ref-registro(persona, 'nombre)); 
+    print(ref-registro(persona, 'edad)); 
+    print(ref-registro(persona, 'activo)) 
   end
 ")
 (scan&parse "
-  var punto = {x = 10; y = 20; z = 30} in
-  begin
-    print(punto);
-    set-registro(punto, 'x, 100);
-    print(punto);
-    set-registro(punto, 'z, 300);
-    print(punto)
+  var punto = {x = 10; y = 20; z = 30} in 
+  begin 
+    print(punto); 
+    set-registro(punto, 'x, 100); 
+    print(punto); 
+    set-registro(punto, 'z, 300); 
+    print(punto) 
   end
 ")
 ;; Quitar los símbolos \ a la hora de correr el código en el interpretador
 (scan&parse "
-  var claves = [\"nombre" "edad" "ciudad\"] in
-  var valores = [\"María" 25 "Bogotá\"] in
-  var persona = crear-registro(claves, valores) in
-  begin
-    print(persona);
-    print(ref-registro(persona, 'nombre));
-    set-registro(persona, 'ciudad, \"Medellín\");
-    print(persona)
-  end
+  var claves = [\"nombre\" \"edad\" \"ciudad\"]  
+  valores = [\"María\" 25 \"Bogotá\"] in 
+  var persona = crear-registro(claves, valores) in 
+  begin 
+    print(persona); 
+    print(ref-registro(persona, 'nombre)); 
+    set-registro(persona, 'ciudad, \"Medellín\"); 
+    print(persona)  
+  end 
 ")
 
 ; Pruebas operadores lógicos y expresiones booleanas
 (scan&parse "
-  var a = True in
-  var b = False in
-  begin
-    print(&&(a, b));
-    print(||(a, b));
-    print(!(a));
-    print(!(b))
+  var a = True  
+  b = False in 
+  begin 
+    print(&&(a, b)); 
+    print(||(a, b)); 
+    print(!(a)); 
+    print(!(b)) 
+  end 
+")
+(scan&parse "
+  var x = 5 
+  y = 10 in 
+  begin 
+    print(<(x, y)); 
+    print(>(x, y)); 
+    print(<=(x, y)); 
+    print(>=(x, y)); 
+    print(==(x, y)); 
+    print(!=(x, y)) 
   end
 ")
 (scan&parse "
-  var x = 5 in
-  var y = 10 in
-  begin
-    print(<(x, y));
-    print(>(x, y));
-    print(<=(x, y));
-    print(>=(x, y));
-    print(==(x, y));
-    print(!=(x, y))
-  end
-")
-(scan&parse "
-  var a = 10 in
-  var b = 20 in
-  begin
-    print(&&(<(a, b),  >(b,15)));
-    print(||(>(a, b),  <(b,25)));
-    print(!(==(a, b)));
-    print(==(+(a,b), 30))
-  end
+  var a = 10  
+  b = 20 in 
+  begin 
+    print(&&(<(a, b),  >(b,15))); 
+    print(||(>(a, b),  <(b,25))); 
+    print(!(==(a, b))); 
+    print(==(+(a,b), 30)) 
+  end 
 ")
 
-; Pruebas ciclo for
+; Pruebas de POO
 (scan&parse "
-  var suma = 0 in
-  begin
-    for i in [1 5 1] do
-      begin
-        set suma = +(suma, i)
-      end
-    done;
-    print(suma)
-  end
-")
-(scan&parse "
-  var lista = [1 2 3 4 5] in
-  var resultado = [] in
-  begin
-    for i in lista do
-      begin
-        append(resultado, *(i, 2))
-      end
-    done;
-    print(resultado)
-  end
-")
-(scan&parse "
-  var lista = [1 2 3 4 5] in
-  var resultado = [] in
-  begin
-    for i in lista do
-      begin
-        if ==(mod(i, 2), 0) then
-          append(resultado, *(i, 10))
-        else
-          append(resultado, *(i, 5))
-      end
-    done;
-    print(resultado)
-  end
+class Animal extends object 
+  field tipo 
+  field edad 
+
+  def __init__(t, e) 
+    begin 
+      set tipo = t; 
+      set edad = e 
+    end 
+ 
+  def getTipo() 
+    tipo 
+
+  def setTipo(nuevoTipo) 
+    set tipo = nuevoTipo 
+
+  def getEdad()  
+    edad 
+
+  def setEdad(nuevaEdad) 
+    set edad = nuevaEdad 
+
+class Perro extends Animal 
+  field raza 
+
+  def __init__(t, e, r) 
+    begin 
+      super __init__(t, e); 
+      set raza = r 
+    end 
+ 
+  def getRaza() 
+    raza 
+
+  def setRaza(nuevaRaza) 
+    set raza = nuevaRaza 
+
+  def ladrar() 
+    print(s-append(\"Guau! Soy un \" , raza , \" y tengo \" , num->str(edad) , \" años.\")) 
+
+var miPerro = new Perro(\"Mamífero\", 5, \"Labrador\") in 
+begin 
+  print(\"Perro 1\"); 
+  print(send miPerro ladrar()) 
+end
 ")
 
-; Pruebas ciclo while
 (scan&parse "
-  var contador = 0 in
-  var suma = 0 in
-  begin
-    while <(contador, 5) do
-      begin
-        set suma = +(suma, contador);
-        set contador = +(contador, 1)
-      end
-    done;
-    print(suma)
-  end
+class Vehiculo extends object 
+  field marca 
+  field modelo 
+ 
+  def __init__(m, d) 
+    begin 
+      set marca = m; 
+      set modelo = d 
+    end 
+
+  def getMarca()  
+    marca 
+ 
+  def setMarca(nuevaMarca) 
+    set marca = nuevaMarca 
+
+  def getModelo() 
+    modelo 
+
+  def setModelo(nuevoModelo) 
+    set modelo = nuevoModelo 
+
+
+class Moto extends Vehiculo  
+  field cilindrada 
+
+  def __init__(m, d, c) 
+    begin 
+      super __init__(m, d); 
+      set cilindrada = c 
+    end 
+
+  def getCilindrada() 
+    cilindrada 
+
+  def setCilindrada(nuevaCilindrada) 
+    set cilindrada = nuevaCilindrada 
+
+
+var moto1 = new Moto(\"Honda\", \"CBR\", 600) 
+moto2 = new Moto(\"Yamaha\", \"R1\", 1000) 
+moto3 = new Moto(\"Ducati\", \"Monster\", 821) in 
+
+
+begin 
+  print(\"Moto 1\"); 
+  print(send moto1 getMarca()); 
+  print(send moto1 getModelo()); 
+  print(send moto1 getCilindrada()); 
+  print(\"-------\"); 
+
+
+  send moto2 setModelo(\"MT-09\"); 
+  send moto3 setCilindrada(900); 
+
+
+  print(\"Moto 2\"); 
+  print(send moto2 getMarca()); 
+  print(send moto2 getModelo()); 
+  print(send moto2 getCilindrada()); 
+  print(\"-------\"); 
+
+
+  print(\"Moto 3\"); 
+  print(send moto3 getMarca()); 
+  print(send moto3 getModelo()); 
+  print(send moto3 getCilindrada()) 
+end 
 ")
-(scan&parse "
-  var lista = [1 2 3 4 5] in
-  var resultado = [] in
-  var i = 0 in
-  begin
-    while <(i, 5) do
-      begin
-        append(resultado, *(ref-list(lista, i), 2));
-        set i = +(i, 1)
-      end
-    done;
-    print(resultado)
-  end
-")
-(scan&parse "
-  var n = 10 in
-  var factorial = 1 in
-  begin
-    while >(n, 1) do
-      begin
-        set factorial = *(factorial, n);
-        set n = -(n, 1)
-      end
-    done;
-    print(factorial)
-  end
-")
+
+(interpretador)
