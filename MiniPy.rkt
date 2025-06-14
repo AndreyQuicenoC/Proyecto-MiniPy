@@ -24,7 +24,7 @@
 ;; - Andrey Quiceno Cabrera        - 2326081
 ;; - Juan Francesco García Vargas  - 2310174
 
-;; Fecha de entrega: 10-06-2025
+;; Fecha de entrega: 14-06-2025
 ;; ========================================================================================
 
 
@@ -96,7 +96,7 @@
 ;;                       <super-call-exp (method-name rands)>
 
 ;; <primitive>       ::= + | - | * | / | mod | add1 | sub1 
-;;                   ::= s-len | s-append
+;;                   ::= s-len | s-append | num->str
 ;;                   ::= crear-lista | append | ref-list | set-list | vacio | vacio? | lista?|
 ;;                       cabeza | cola
 ;;                   ::= crear-tupla | tupla? | ref-tuple | cabeza | cola | vacio | vacio?
@@ -2143,22 +2143,52 @@
 
 
 ;; 17. Pruebas
-;;****************************************************************************************
+; =============================================================================
 ; Pruebas de asignación de variables:
+; =============================================================================
+
+;--------------------------------------------------------
+; Prueba 1: Declaración de variable mutable (var)
+; Se declara la variable x con valor 10 y se imprime su valor.
 (scan&parse "
 var x = 10 in 
 print(x)
 ")
+
+;--------------------------------------------------------
+; Prueba 2: Declaración de constante (const)
+; Se declara la constante y con valor 3.14 y se imprime su valor.
 (scan&parse "
 const y = 3.14 in 
 print(y)
 ")
+
+;--------------------------------------------------------
+; Prueba 3: Declaración de función recursiva (rec)
+; Se declara la función recursiva Fact para calcular el factorial de un número a.
+; La función devuelve 1 si a es 0 o 1, en caso contrario devuelve a * Fact(a - 1).
+; Se calcula el factorial de 5.
 (scan&parse "
 rec Fact (a)= if ||(==(a,0),==(a,1)) then 1 else *(a,(Fact -(a,1))) in 
 (Fact 5)
 ")
 
+
 ; Pruebas de expresiones:
+
+;--------------------------------------------------------
+; Prueba 1: Asignación de una lista heterogénea a una variable
+; Se declara la variable x con una lista que contiene diferentes tipos de valores:
+; - Números (4, 3.141519)
+; - Un circuito (con una lista de compuertas)
+; - Un vector (x16 con valores 1, 10, 4)
+; - Una cadena de texto ("Proyecto")
+; - Un valor booleano (True)
+; - Una función anónima (proc(a) set a=1)
+; - Una lista simple ([1 2])
+; - Un registro ({nombre="Jonathan"; edad=25})
+; - Una tupla (tuple[10 20])
+; Luego se retorna x.
 (scan&parse "
 var x=[4 3.141519 C(circuit(gate-list 
    (gate G1(type or)(input-list True False)) 
@@ -2173,12 +2203,25 @@ var x=[4 3.141519 C(circuit(gate-list
    tuple[10 20]] 
    in x 
 ")
+
+;--------------------------------------------------------
+; Prueba 2: Asignación de un símbolo (quoted-exp) a una variable
+; Se declara la variable y con el símbolo 'x (no la variable x, sino el símbolo literal)
+; Luego se retorna y.
 (scan&parse "
 var y ='x  in y 
 ")
 
+; =============================================================================
 ; Pruebas de estructuras de control:
-; if-then-else:
+; =============================================================================
+
+;--------------------------------------------------------
+; Pruebas if-then-else:
+
+; Prueba 1: if-then-else simple
+; Se declara la variable x con valor 10.
+; Si x es igual a 10 imprime "x es igual a 10", de lo contrario imprime "x no es igual a 10".
 (scan&parse "
   var x = 10 in 
   begin 
@@ -2188,6 +2231,12 @@ var y ='x  in y
       print(\"x no es igual a 10\") 
   end 
 ")
+
+; Prueba 2: if-else if-else (condicional anidado)
+; Se declara la variable y con valor 5.
+; - Si y es menor que 10, imprime "y es menor que 10".
+; - Si y es mayor que 10, imprime "y es mayor que 10".
+; - Si y es igual a 10, imprime "y es igual a 10".
 (scan&parse "
   var y = 5 in 
   begin 
@@ -2200,11 +2249,19 @@ var y ='x  in y
   end 
 ")
 
-; Pruebas ciclo for
+
+;--------------------------------------------------------
+; Pruebas ciclo for:
+
+; Prueba 3: for recorriendo lista explícita
+; Se declara la variable suma con valor 0.
+; Se recorre la lista explícita [1 2 3]:
+; - En cada iteración se suma el valor de i a suma.
+; Al finalizar imprime el valor acumulado de suma: 6.
 (scan&parse "
   var suma = 0 in 
   begin 
-    for i in [1 5 1] do 
+    for i in [1 2 3] do 
       begin 
         set suma = +(suma, i) 
       end 
@@ -2212,6 +2269,12 @@ var y ='x  in y
     print(suma) 
   end 
 ")
+
+; Prueba 4: for recorriendo una lista y multiplicando elementos
+; Se declara la lista [1 2 3 4 5] y la lista vacía resultado.
+; Por cada elemento i de lista:
+; - Se multiplica i por 2 y se añade a resultado.
+; Al finalizar imprime resultado: [2 4 6 8 10].
 (scan&parse "
   var lista = [1 2 3 4 5]
   resultado = [] in 
@@ -2224,6 +2287,13 @@ var y ='x  in y
     print(resultado) 
   end 
 ")
+
+; Prueba 5: for con condición if dentro
+; Se declara la lista [1 2 3 4 5] y resultado vacío.
+; Por cada elemento i:
+; - Si i es par (mod(i,2)=0), añade i*10.
+; - Si i es impar, añade i*5.
+; Al finalizar imprime resultado: [5 20 15 40 25].
 (scan&parse "
   var lista = [1 2 3 4 5]  
   resultado = [] in 
@@ -2240,7 +2310,16 @@ var y ='x  in y
   end 
 ")
 
-; Pruebas ciclo while
+
+;--------------------------------------------------------
+; Pruebas ciclo while:
+
+; Prueba 6: while con suma acumulada
+; Se declaran contador=0 y suma=0.
+; Mientras contador < 5:
+; - Se suma contador a suma.
+; - Se incrementa contador en 1.
+; Al final imprime suma: 0+1+2+3+4 = 10.
 (scan&parse "
   var contador = 0 
   suma = 0 in 
@@ -2254,6 +2333,13 @@ var y ='x  in y
     print(suma) 
   end 
 ")
+
+; Prueba 7: while recorriendo lista con índice
+; Se declara lista=[1 2 3 4 5], resultado=[] y i=0.
+; Mientras i < 5:
+; - Obtiene el elemento en la posición i con ref-list.
+; - Multiplica el valor por 2 y lo añade a resultado.
+; Al final imprime resultado: [2 4 6 8 10].
 (scan&parse "
   var lista = [1 2 3 4 5] 
   resultado = []  
@@ -2268,6 +2354,13 @@ var y ='x  in y
     print(resultado) 
   end 
 ")
+
+; Prueba 8: while para calcular factorial
+; Se declara n=5 y factorial=1.
+; Mientras n > 1:
+; - Se multiplica factorial por n.
+; - Se reduce n en 1.
+; Al final imprime factorial: 5*4*3*2*1 = 120.
 (scan&parse "
   var n = 5  
   factorial = 1 in 
@@ -2282,92 +2375,167 @@ var y ='x  in y
   end 
 ")
 
+; =============================================================================
 ; Pruebas de listas
+; =============================================================================
+
+; Prueba 1: creación de lista e indexación (ref-list)
+; - Se crea lista = [1 2 3 4 5].
+; - Se imprime la lista completa.
+; - Se imprime el elemento en posición 0 (debe ser 1).
+; - Se imprime el elemento en posición 2 (debe ser 3).
 (scan&parse "
   var lista = [1 2 3 4 5] in 
   begin 
-    print(lista); 
+    print(lista);           
     print(ref-list(lista, 0)); 
-    print(ref-list(lista, 2)) 
+    print(ref-list(lista, 2))  
   end 
 ")
+
+; Prueba 2: modificación de lista con set-list
+; - Se crea lista = [10 20 30 40 50].
+; - Se imprime la lista inicial.
+; - Se hace set-list(lista, 1, 99): reemplaza el elemento en índice 1 (20) por 99.
+; - Se imprime la lista resultante (debe mostrar [10 99 30 40 50]).
+; - Se hace set-list(lista, 3, 77): reemplaza el elemento en índice 3 (40) por 77.
+; - Se imprime la lista final (debe mostrar [10 99 30 77 50]).
 (scan&parse "
   var lista = [10 20 30 40 50] in 
   begin 
-    print(lista); 
+    print(lista);           
     set-list(lista, 1, 99); 
-    print(lista); 
-    set-list(lista, 3, 77); 
-    print(lista) 
+    print(lista);          
+    set-list(lista, 3, 77);
+    print(lista)            
   end 
 ")
+
+; Prueba 3: crear-lista, vacio, append y vacio?
+; - Se crea lista1 = crear-lista(0, 5): asume que crea una lista de 0 hasta 4 o bien 5 elementos inicializados en 0?
+;   (dependerá de la definición: aquí se documenta con la lógica esperada de tu implementación).
+; - Se crea lista2 = vacio(): lista inicialmente vacía.
+; - Se imprime lista1; luego append(lista1, 100) y se imprime de nuevo.
+; - Se verifica vacio?(lista2) antes y después de append; y se muestra lista2.
+;   - Antes de append: True (vacía).
+;   - Después de append(lista2, 42): vacio? debe ser False, y lista2 contiene [42].
 (scan&parse "
   var lista1 = crear-lista(0, 5)  
   lista2 = vacio() in 
   begin 
-    print(lista1);  
+    print(lista1);          
     append(lista1, 100); 
-    print(lista1); 
-    print(vacio?(lista2)); 
+    print(lista1);         
+    print(vacio?(lista2));  
     append(lista2, 42); 
     print(vacio?(lista2)); 
-    print(lista2)  
+    print(lista2)           
   end 
-") 
+")
 
+; =============================================================================
 ; Pruebas de tuplas
+; =============================================================================
+
+; Prueba 1: creación de tupla e indexación (ref-tuple)
+; - Se crea tupla = tuple[1 2 3 4 5].
+; - Se imprime la tupla completa.
+; - Se imprime ref-tuple(tupla, 0) (debe ser 1).
+; - Se imprime ref-tuple(tupla, 2) (debe ser 3).
 (scan&parse "
   var tupla = tuple[1 2 3 4 5] in 
   begin 
-    print(tupla); 
+    print(tupla);            
     print(ref-tuple(tupla, 0)); 
-    print(ref-tuple(tupla, 2)) 
+    print(ref-tuple(tupla, 2))   
   end  
 ")
+
+; Prueba 2: comprobaciones de tipo tupla? y lista?
+; - Se crea t = tuple[10 20 30].
+; - Se crea l = [10 20 30] (lista).
+; - Se imprime t.
+; - print(tupla?(t)) debe ser True.
+; - print(tupla?(l)) debe ser False.
+; - print(lista?(t)) debe ser False.
+; - print(lista?(l)) debe ser True.
 (scan&parse "
   var t = tuple[10 20 30]  
   l = [10 20 30] in 
   begin
-    print(t);
-    print(tupla?(t));
-    print(tupla?(l));
-    print(lista?(t));
-    print(lista?(l))
+    print(t);                 
+    print(tupla?(t));         
+    print(tupla?(l));         
+    print(lista?(t));         
+    print(lista?(l))          
   end
 ")
+
+; Prueba 3: función que devuelve tupla y descomposición por indexación
+; - Se define calcular = proc(x, y) tuple[+(x,y) -(x,y) *(x,y)].
+; - Se evalúa resultado = (calcular 10 5), que debe ser tuple[15 5 50].
+; - Se imprime resultado, y luego:
+;   - ref-tuple(resultado, 0)    ; suma = 15
+;   - ref-tuple(resultado, 1)    ; resta = 5
+;   - ref-tuple(resultado, 2)    ; multiplicación = 50
 (scan&parse "
   var calcular = proc(x, y) tuple[+(x,y) -(x,y) *(x,y)] in 
   var resultado = (calcular 10 5) in 
   begin  
     print(resultado); 
-    print(ref-tuple(resultado, 0)); %suma  
-    print(ref-tuple(resultado, 1)); %resta  
-    print(ref-tuple(resultado, 2))  %multiplicación  
+    print(ref-tuple(resultado, 0)); 
+    print(ref-tuple(resultado, 1)); 
+    print(ref-tuple(resultado, 2))  
   end 
-") 
+")
 
+; =============================================================================
 ; Pruebas de registros
-;; Quitar los símbolos \ a la hora de correr el código en el interpretador
+; =============================================================================
+
+; Nota: Se deben quitar los \ de las comillas dentro de los registros para que se interpreten correctamente.
+
+; Prueba 1: creación y lectura de registro estático
+; - Se crea persona = {nombre = "Juan"; edad = 30; activo = True}.
+; - Se imprime el registro completo.
+; - Se imprime ref-registro(persona, 'nombre)  ; Esperado: "Juan"
+; - Se imprime ref-registro(persona, 'edad)    ; Esperado: 30
+; - Se imprime ref-registro(persona, 'activo)  ; Esperado: True
 (scan&parse "
   var persona = {nombre = \"Juan\"; edad = 30; activo = True} in 
   begin 
     print(persona); 
     print(ref-registro(persona, 'nombre)); 
-    print(ref-registro(persona, 'edad)); 
-    print(ref-registro(persona, 'activo)) 
+    print(ref-registro(persona, 'edad));   
+    print(ref-registro(persona, 'activo))  
   end
 ")
+
+; Prueba 2: modificación de registro con set-registro
+; - Se crea punto = {x = 10; y = 20; z = 30}.
+; - Se imprime registro inicial.
+; - set-registro(punto, 'x, 100): cambia x a 100.
+; - Se imprime después del cambio.
+; - set-registro(punto, 'z, 300): cambia z a 300.
+; - Se imprime registro final.
 (scan&parse "
   var punto = {x = 10; y = 20; z = 30} in 
   begin 
     print(punto); 
     set-registro(punto, 'x, 100); 
-    print(punto); 
+    print(punto);   
     set-registro(punto, 'z, 300); 
-    print(punto) 
+    print(punto)     
   end
 ")
-;; Quitar los símbolos \ a la hora de correr el código en el interpretador
+
+; Prueba 3: crear-registro a partir de listas de claves y valores
+; - Se crean claves = ["nombre" "edad" "ciudad"] y valores = ["María" 25 "Bogotá"].
+; - persona = crear-registro(claves, valores).
+; - Se imprime persona.
+; - Se imprime ref-registro(persona, 'nombre) ; Esperado: "María"
+; - set-registro(persona, 'ciudad, "Medellín"), se modifica ciudad.
+; - Se imprime registro actualizado.
 (scan&parse "
   var claves = [\"nombre\" \"edad\" \"ciudad\"]  
   valores = [\"María\" 25 \"Bogotá\"] in 
@@ -2376,11 +2544,20 @@ var y ='x  in y
     print(persona); 
     print(ref-registro(persona, 'nombre)); 
     set-registro(persona, 'ciudad, \"Medellín\"); 
-    print(persona)  
+    print(persona)                       
   end 
 ")
 
-; Pruebas operadores lógicos y expresiones booleanas
+; =============================================================================
+; Pruebas de operadores lógicos y expresiones booleanas
+; =============================================================================
+
+; Prueba 1: operadores lógicos básicos (&&, ||, !)
+; - Se crean a = True, b = False.
+; - print(&&(a, b)) ; Esperado: False
+; - print(||(a, b)) ; Esperado: True
+; - print(!(a))     ; Esperado: False
+; - print(!(b))     ; Esperado: True
 (scan&parse "
   var a = True  
   b = False in 
@@ -2391,6 +2568,15 @@ var y ='x  in y
     print(!(b)) 
   end 
 ")
+
+; Prueba 2: comparaciones numéricas
+; - Se crean x = 5, y = 10.
+; - print(<(x, y))   ; Esperado: True
+; - print(>(x, y))   ; Esperado: False
+; - print(<=(x, y))  ; Esperado: True
+; - print(>=(x, y))  ; Esperado: False
+; - print(==(x, y))  ; Esperado: False
+; - print(!=(x, y))  ; Esperado: True
 (scan&parse "
   var x = 5 
   y = 10 in 
@@ -2403,6 +2589,13 @@ var y ='x  in y
     print(!=(x, y)) 
   end
 ")
+
+; Prueba 3: combinación de expresiones lógicas y comparaciones
+; - Se crean a = 10, b = 20.
+; - print(&&(<(a, b),  >(b,15)))   ; <(a,b)=True, >(b,15)=True -> && = True
+; - print(||(>(a, b),  <(b,25)))   ; >(a,b)=False, <(b,25)=True -> || = True
+; - print(!(==(a, b)))             ; ==(a,b)=False -> ! = True
+; - print(==(+(a,b), 30))          ; +(a,b)=30 -> ==(30,30)=True
 (scan&parse "
   var a = 10  
   b = 20 in 
@@ -2413,8 +2606,18 @@ var y ='x  in y
     print(==(+(a,b), 30)) 
   end 
 ")
+; =============================================================================
+; Pruebas de Programación Orientada a Objetos (POO)
+; =============================================================================
 
-; Pruebas de POO
+; Prueba 1: Clases Animal y Perro
+; - Se define class Animal con campos tipo y edad, constructor __init__, getters/setters y super.
+; - Se define class Perro que extiende Animal, con campo raza, constructor que llama a super y getter/setter de raza, y método ladrar.
+; - Se crea miPerro = new Perro("Mamífero", 5, "Labrador").
+; - En el begin:
+;   * print("Perro 1")
+;   * print(send miPerro ladrar())
+;     - El método ladrar imprime algo como: "Guau! Soy un Labrador y tengo 5 años."
 (scan&parse "
 class Animal extends object 
   field tipo 
@@ -2425,7 +2628,7 @@ class Animal extends object
       set tipo = t; 
       set edad = e 
     end 
- 
+  
   def getTipo() 
     tipo 
 
@@ -2446,7 +2649,7 @@ class Perro extends Animal
       super __init__(t, e); 
       set raza = r 
     end 
- 
+  
   def getRaza() 
     raza 
 
@@ -2463,11 +2666,36 @@ begin
 end
 ")
 
+; Prueba 2: Clases Vehiculo y Moto
+; - Se define class Vehiculo con campos marca y modelo, constructor, getters y setters.
+; - Se define class Moto que extiende Vehiculo, con campo cilindrada, constructor que llama a super, getters y setters.
+; - Se crean tres instancias:
+;     moto1 = new Moto("Honda", "CBR", 600)
+;     moto2 = new Moto("Yamaha", "R1", 1000)
+;     moto3 = new Moto("Ducati", "Monster", 821)
+; - En el begin:
+;   * print("Moto 1")
+;   * print(send moto1 getMarca())      ; Esperado: "Honda"
+;   * print(send moto1 getModelo())     ; Esperado: "CBR"
+;   * print(send moto1 getCilindrada()) ; Esperado: 600
+;   * print("-------")
+;   * Luego:
+;       send moto2 setModelo("MT-09")   ; Cambia modelo de moto2 a "MT-09"
+;       send moto3 setCilindrada(900)   ; Cambia cilindrada de moto3 a 900
+;   * print("Moto 2")
+;   * print(send moto2 getMarca())      ; Esperado: "Yamaha"
+;   * print(send moto2 getModelo())     ; Esperado: "MT-09"
+;   * print(send moto2 getCilindrada()) ; Esperado: 1000
+;   * print("-------")
+;   * print("Moto 3")
+;   * print(send moto3 getMarca())      ; Esperado: "Ducati"
+;   * print(send moto3 getModelo())     ; Esperado: "Monster"
+;   * print(send moto3 getCilindrada()) ; Esperado: 900
 (scan&parse "
 class Vehiculo extends object 
   field marca 
   field modelo 
- 
+  
   def __init__(m, d) 
     begin 
       set marca = m; 
@@ -2476,7 +2704,7 @@ class Vehiculo extends object
 
   def getMarca()  
     marca 
- 
+
   def setMarca(nuevaMarca) 
     set marca = nuevaMarca 
 
@@ -2485,7 +2713,6 @@ class Vehiculo extends object
 
   def setModelo(nuevoModelo) 
     set modelo = nuevoModelo 
-
 
 class Moto extends Vehiculo  
   field cilindrada 
@@ -2502,35 +2729,30 @@ class Moto extends Vehiculo
   def setCilindrada(nuevaCilindrada) 
     set cilindrada = nuevaCilindrada 
 
-
 var moto1 = new Moto(\"Honda\", \"CBR\", 600) 
 moto2 = new Moto(\"Yamaha\", \"R1\", 1000) 
 moto3 = new Moto(\"Ducati\", \"Monster\", 821) in 
 
-
 begin 
   print(\"Moto 1\"); 
-  print(send moto1 getMarca()); 
-  print(send moto1 getModelo()); 
+  print(send moto1 getMarca());     
+  print(send moto1 getModelo());    
   print(send moto1 getCilindrada()); 
   print(\"-------\"); 
-
 
   send moto2 setModelo(\"MT-09\"); 
   send moto3 setCilindrada(900); 
 
-
   print(\"Moto 2\"); 
-  print(send moto2 getMarca()); 
-  print(send moto2 getModelo()); 
+  print(send moto2 getMarca());     
+  print(send moto2 getModelo());     
   print(send moto2 getCilindrada()); 
   print(\"-------\"); 
 
-
   print(\"Moto 3\"); 
-  print(send moto3 getMarca()); 
-  print(send moto3 getModelo()); 
-  print(send moto3 getCilindrada()) 
+  print(send moto3 getMarca());      
+  print(send moto3 getModelo());     
+  print(send moto3 getCilindrada())  
 end 
 ")
 
