@@ -24,7 +24,7 @@
 ;; - Andrey Quiceno Cabrera        - 2326081
 ;; - Juan Francesco García Vargas  - 2310174
 
-;; Fecha de entrega: 14-06-2025
+;; Fecha de entrega: 16-06-2025
 ;; ========================================================================================
 
 
@@ -1378,10 +1378,8 @@
 (define extend-env-refs
   (lambda (syms vec env)
     (extended-env-record syms vec (make-vector (length syms) #t) env)))
+
 ;;*******************************************************************************************
-
-
-
 ;; 10.Funciones_Auxiliares_Para_Listas_Tuplas_y_Registros
 ;;*******************************************************************************************
 
@@ -1583,9 +1581,6 @@
                   (+ list-index-r 1)
                   #f))))))
 ;;****************************************************************************************
-
-
-
 ;; 11.Funciones_Auxiliares_Para_Hexadecimales
 ;;****************************************************************************************
 
@@ -1735,8 +1730,6 @@
         ;; si no es target, lo devuelvo tal cual:
         x)))
 ;;****************************************************************************************
-
-
 
 ;; 13.Funciones_Auxiliares_Para_OOP
 ;;****************************************************************************************
@@ -2185,7 +2178,7 @@ rec Fact (a)= if ||(==(a,0),==(a,1)) then 1 else *(a,(Fact -(a,1))) in
 ; - Una cadena de texto ("Proyecto")
 ; - Un valor booleano (True)
 ; - Una función anónima (proc(a) set a=1)
-; - Una lista simple ([1 2])
+; - Una lista ([1 2])
 ; - Un registro ({nombre="Jonathan"; edad=25})
 ; - Una tupla (tuple[10 20])
 ; Luego se retorna x.
@@ -2249,7 +2242,6 @@ var y ='x  in y
   end 
 ")
 
-
 ;--------------------------------------------------------
 ; Pruebas ciclo for:
 
@@ -2309,7 +2301,6 @@ var y ='x  in y
     print(resultado) 
   end 
 ")
-
 
 ;--------------------------------------------------------
 ; Pruebas ciclo while:
@@ -2412,8 +2403,7 @@ var y ='x  in y
 ")
 
 ; Prueba 3: crear-lista, vacio, append y vacio?
-; - Se crea lista1 = crear-lista(0, 5): asume que crea una lista de 0 hasta 4 o bien 5 elementos inicializados en 0?
-;   (dependerá de la definición: aquí se documenta con la lógica esperada de tu implementación).
+; - Se crea lista1 = crear-lista(0, 5): crea una lista de 5 elementos inicializados en 0.
 ; - Se crea lista2 = vacio(): lista inicialmente vacía.
 ; - Se imprime lista1; luego append(lista1, 100) y se imprime de nuevo.
 ; - Se verifica vacio?(lista2) antes y después de append; y se muestra lista2.
