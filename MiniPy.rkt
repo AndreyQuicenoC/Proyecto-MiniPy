@@ -2029,9 +2029,61 @@
       (empty-gate-list () gl2)
       (cons-gate-list (g rest)
                       (cons-gate-list g (append-gate-lists rest gl2))))))
+
 ;;****************************************************************************************
+;Funciones auxiliares para imprimir circuitos:
+(define print-circuit
+  (lambda (circ)
+    (cases circuit circ
+      (a-circuit (gate-list)
+        (display "C(circuit(gate-list")
+        (print-gate-list gate-list)
+        (display "))")))))
 
+(define print-gate-list
+  (lambda (gl)
+    (cases gate-list gl
+      (empty-gate-list () (display " ")) 
+      (cons-gate-list (g rest)
+        (display " ")
+        (print-gate g)
+        (print-gate-list rest)))))
 
+(define print-gate
+  (lambda (g)
+    (cases gate g
+      (a-gate (id typ input-list)
+        (display "(gate ")
+        (display id)
+        (display " (type ")
+        (cases type typ
+          (and-type () (display "and"))
+          (or-type () (display "or"))
+          (not-type () (display "not"))
+          (xor-type () (display "xor")))
+        (display ") (input-list")
+        (print-input-list input-list)
+        (display "))")))))
+
+(define print-input-list
+  (lambda (il)
+    (cases input-list il
+      (empty-input-list () (display ""))
+      (cons-input-list (inp rest)
+        (display " ") 
+        (print-input inp)
+        (print-input-list rest)))))
+
+(define print-input
+  (lambda (inp)
+    (cases input inp
+      (ref-input (id)
+        (display id))
+      (bool-input (b)
+        (cases bool b
+          (true-lit () (display "True"))
+          (false-lit () (display "False")))))))
+;;****************************************************************************************
 
 ;; 16.Otras_Funciones_Auxiliares
 ;;****************************************************************************************
@@ -2073,6 +2125,9 @@
       ;; Caso para targets normales
       [(target? v)
        (print-value (deref-target v))]
+
+      [(circuit? v)
+       (print-circuit v)]
       
       [(lista? v)
        (let ((elems (get-li v)))
@@ -2132,8 +2187,6 @@
       [else
        (display v)])))
 ;;****************************************************************************************
-
-
 
 ;; 17. Pruebas
 ; =============================================================================
